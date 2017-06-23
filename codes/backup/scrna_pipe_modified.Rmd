@@ -1,0 +1,330 @@
+---
+title: "scrna_pipe"
+author: "Zhe"
+date: "June 8, 2017"
+output: html_document
+---
+
+
+```{r}
+# scRNA-seq pipeline
+# Keep track of In vitro transcription RNA molecules
+# Keep track of final PCR amplification products
+
+# Input: demultiplexed SAM file
+# Output: count matrix after UMI correction, 
+
+
+# required packages:
+suppressPackageStartupMessages(library(data.table))
+suppressPackageStartupMessages(library(gtools))
+suppressPackageStartupMessages(library(stringdist))
+
+```
+
+
+```{r}
+# umi.edit = as.numeric(opt$options$umi_edit_dist)
+# umi.window = as.numeric(opt$options$window)
+# umi.length = as.numeric(opt$options$umi_length)
+test.sam <- "../data/CS_1017_sample_0001.sam"
+fname <- last(strsplit(substr(test.sam, start=1,
+                              stop=nchar(test.sam)-4), split="/", fixed=T)[[1]])
+
+# acceptable umi sequence mismatches 
+umi.edit <- 1
+
+# default sliding window for fragmentation discrepencies
+umi.window <- 20
+
+# 
+umi.length <- 5
+duplication.offset = 1024L  # SAM specification for duplication in FLAG column
+
+output.dir <- "../res/"
+
+# SAM file directory
+out.sam <- paste0(output.dir, fname, ".tab")
+
+umi.stats <- paste0(output.dir, fname, "_UMI_stats.tab")
+
+umi.qc <- paste0(output.dir, fname, "_UMI_QC_plots.pdf")
+
+umi.original.counts <- paste0(output.dir, fname, "_UMI_original_counts.txt")
+
+umi.inferred.counts <- paste0(output.dir, fname, "_UMI_inferred_counts.txt")
+
+umi.position.counts <- paste0(output.dir, fname, "_UMI_position_counts.txt")
+  
+# remove output file if exists
+#if (file.exists(out.sam)) file.remove(out.sam)
+
+umi.matrix <- c()
+
+
+```
+
+```{r}
+# functions
+
+read.sam <- function(samfile){
+  # get the maximum number of columns per row
+  maxncol <- max(count.fields(samfile, sep="\t", quote="", comment.char=""))
+  
+  # read in SAM file
+  sam <- read.table(samfile, 
+              sep="\t",
+              quote="",
+              fill=T, 
+              header=F,
+              stringsAsFactors=F,
+              na.strings=NULL,
+              comment.char="@",
+              col.names=1:maxncol)
+  
+  colnames(sam)[1:11] <- c("qname", "flag", "rname", "position", "mapq", "cigar",
+                             "rnext", "pnext", "tlen", "seq", "qual")
+  
+  # convert to data.table object
+  samdt <- data.table(sam, check.names=T)
+  return (samdt)
+}
+
+
+get.adjacent.unique.pos <- function(unique.pos, umi.window) {
+  adjs <- diff(unique.pos) <= umi.window
+  ind <- which(adjs == T)
+  plusone <- ind + 1
+  return (unique.pos[sort(union(ind, plusone))])
+}
+
+
+umi.mismatch.correction <- function(samdt, current.ref, umi.window) {
+  # Add UMI info to reference data table
+  rdt <- samdt[rname == current.ref,]
+  rdt[, c("umi", "inferred_umi") := 
+      tstrsplit(qname, ":", fixed=TRUE, 
+                keep=length(tstrsplit(qname, ":", fixed=TRUE)))]
+  
+  # Correct UMIs with sequencing errors by looking at UMIs in surrounding region
+  
+  # get all alignment positions
+  unique.pos <- sort(unique(rdt$position))
+  
+  # check if fragment UMI correction is necessary
+  if (min(diff(unique.pos)) > umi.window) {
+    # do nothing
+  } else {
+    
+    # get unique positions with adjacency
+    unique.adj.pos <- get.adjacent.unique.pos(unique.pos, umi.window)
+    
+    for (i in unique.adj.pos) {
+      # Get range data table for position and surrounding window
+      # get all alignment positions ranging between i-umi.window to i+umi.window
+      rdt.sub <- rdt[position == i, ]
+      rdt.flank.5p <- rdt[position >= (i-umi.window) & position <= (i-1), ]
+      rdt.flank.3p <- rdt[position >= (i+1) & position <= (i+umi.window), ]
+      rdt.flank <- rbindlist(list(rdt.flank.5p, rdt.flank.3p), use.names=F, fill=F, idcol=F)
+      
+      # Get all unique UMIs in the region
+      all.umi.count <- sort(table(c(rdt.sub[,umi], rdt.flank[,umi])))
+  	  
+  	  
+  	  # Align UMIs to all other UMIs. Assign UMIs with lower counts to 
+  	  # matching UMI with higher counts
+  	  
+  	  if (length(all.umi.count) > 1) {
+  	    sdm <- stringdistmatrix(names(all.umi.count), names(all.umi.count))
+  	    diag(sdm) <- 100
+  	    rownames(sdm) <- names(all.umi.count)
+  		  colnames(sdm) <- names(all.umi.count)
+  		  
+  		  position.umi.count <- sort(table(rdt.sub$umi))
+  		  
+  		  # for umi k at position i
+  		  for (k in names(position.umi.count)) {
+  		    
+  		    # Get the min edit distance for that UMI
+  		    sdm.min.edit <- min(sdm[k,])
+  		    
+  		    if (sdm.min.edit <= umi.edit) {
+            # Get the index of the edit distance less than umi.edit with the highest count.
+  		      # rownames and colnames of sdm (all.umi.count) is sorted by read counts
+  		      # increasingly
+            sdm.edit.ind <- max(which(sdm[k,] <= umi.edit))
+            
+            # correct current umi k at position i
+            if (which(rownames(sdm) == k) < sdm.edit.ind) {
+              rdt[umi == k & position == i, inferred_umi := colnames(sdm)[sdm.edit.ind]]
+            }
+  		    }
+  		  }
+  	  }
+    }
+  }
+  return (rdt)
+}
+
+
+
+
+```
+
+
+
+
+
+
+
+
+```{r}
+
+# read in SAM file
+samdt <- read.sam(test.sam)
+
+# get reference sequence names
+chr <- mixedsort(setdiff(unique(samdt[,rname]), "*"))
+
+# for each reference sequence name (chr)
+for (current.ref in chr) {
+  rdt <- umi.mismatch.correction(samdt, current.ref, umi.window)
+  
+  # Now that UMIs have been fixed, go through each position and pick one read to
+	# represent each UMI. Positions with more reads with that UMI and that are more 5'
+	# are given higher priority. One read randomly selected to be the non-duplicate
+  
+  unique.pos <- sort(unique(rdt$position))
+  
+  for(i in unique.pos) {
+    rdt.sub <- rdt[position == i, ]
+    rdt.flank.5p <- rdt[position >= (i-umi.window) & position <= (i-1), ]
+    rdt.flank.3p <- rdt[position >= (i+1) & position <= (i+umi.window), ]
+    rdt.flank <- rbindlist(list(rdt.flank.5p, rdt.flank.3p), use.names=F, fill=F, idcol=F)
+    
+    position.umi.count <- sort(table(rdt.sub$inferred_umi))
+    
+    for(k in names(position.umi.count)) {
+      rdt.umi.sub <- rdt.sub[inferred_umi == k, ]
+      rdt.umi.flank.5p <- rdt.flank.5p[inferred_umi == k, ]
+      rdt.umi.flank.3p <- rdt.flank.3p[inferred_umi == k, ]
+      
+      rdt.umi.flank.5p.table <- table(rdt.umi.flank.5p$position)
+		  rdt.umi.flank.3p.table <- table(rdt.umi.flank.3p$position)
+		  
+		  rdt.umi.flank.5p.max <- ifelse(length(rdt.umi.flank.5p.table) == 0, 0,
+		                                max(rdt.umi.flank.5p.table))
+		  rdt.umi.flank.3p.max <- ifelse(length(rdt.umi.flank.3p.table) == 0, 0,
+		                                max(rdt.umi.flank.3p.table))
+		  
+		  if (nrow(rdt.umi.sub) > rdt.umi.flank.5p.max & 
+		      nrow(rdt.umi.sub) >= rdt.umi.flank.3p.max) {
+		    ind <- rdt$qname %in% rdt.umi.sub$qname[-1]
+		    rdt[ind,flag := rdt[ind,flag] + duplication.offset]
+		    rdt[ind,duplicate := TRUE]
+		  } else {
+		    ind = rdt$qname %in% rdt.umi.sub$qname
+		    rdt[ind,duplicate := TRUE]
+		  }
+    }
+  }
+  
+  #fwrite(rdt[,-c("umi", "inferred_umi", "Duplicate")], 
+  #       file=out.sam, sep="\t", quote=FALSE, row.names=FALSE, col.names=FALSE, append=TRUE)
+  
+  
+	umi.matrix <- rbindlist(list(umi.matrix, 
+	                   rdt[,c("rname", "position", "umi", "inferred_umi", "duplicate")]),
+	                   use.names=F, fill=F, idcol=F)
+}
+
+
+fwrite(samdt[rname == '*', ], out.sam, sep="\t", quote=FALSE, row.names=FALSE,
+            col.names=FALSE, append=TRUE)
+
+stats.label <- c("Number of aligned reads:", 
+                "Number of duplicates:", 
+                "Percent duplication:",
+                "Number of unique UMIs:",
+                "Number of unique UMIs after correction:",
+                "Number of reads with mismatches in UMI:",
+                "Percentage of reads with mismatches in UMI:")
+
+stats <- c(nrow(umi.matrix), 
+          sum(umi.matrix$duplicate, na.rm = T),
+          sum(umi.matrix$duplicate, na.rm = T)/nrow(umi.matrix),
+          length(unique(umi.matrix[,umi])), 
+          length(unique(umi.matrix[,inferred_umi])),
+          sum(umi.matrix[,umi] != umi.matrix[,inferred_umi]),
+          sum(umi.matrix[,umi] != umi.matrix[,inferred_umi]) / nrow(umi.matrix))
+
+fwrite(data.table(stats.label, stats), umi.stats, sep="\t",
+            quote=FALSE, row.names=FALSE, col.names=FALSE)
+
+# Calculate relative abundance of UMIs
+umi.table <- table(umi.matrix[,umi])
+umi.inferred.table <- table(umi.matrix[,inferred_umi])
+
+# Base percentage of UMIs at each position
+base.matrix <- c()
+for(i in 1:umi.length) {
+  base.matrix <- cbind(base.matrix, table(substring(unique(umi.matrix[,umi]), i, i)))
+}
+
+#base.matrix.frac = sweep(base.matrix, 2, length(unique(umi.matrix[,umi])), "/")
+base.matrix.frac <- base.matrix / length(unique(umi.matrix[,umi]))
+
+base.inferred.matrix <- c()
+for(i in 1:umi.length) {
+  base.inferred.matrix <- cbind(base.inferred.matrix, 
+                               table(substring(unique(umi.matrix[,inferred_umi]), i, i)))
+}
+
+#base.inferred.matrix.frac = 
+#  sweep(base.inferred.matrix, 2, length(unique(umi.matrix[,4])), "/")
+base.inferred.matrix.frac <- base.inferred.matrix / length(unique(umi.matrix[,inferred_umi]))
+
+
+pdf(umi.qc, useDingbats=FALSE)
+
+hist(log2(umi.table), freq=FALSE, xlab="Log2(number of reads per UMI)", ylab="UMI Fraction",
+     lwd=2,breaks=20, main="Original UMIs")
+
+hist(log2(umi.inferred.table), freq=FALSE, xlab="Log2(number of reads per UMI)", 
+     ylab="UMI Fraction", lwd=2, breaks=20, main="Inferred UMIs")
+
+barplot(base.matrix.frac, col=1:4, xlab="UMI position", names.arg=(1:umi.length),
+        ylab="Percent")
+        
+barplot(base.inferred.matrix.frac, col=1:4, xlab="UMI position", names.arg=(1:umi.length),
+        ylab="Percent")
+
+plot(1:10, type="n")
+legend("center", rownames(base.matrix.frac), col=1:4, pch=15)
+dev.off()
+
+o <- order(umi.table, decreasing=TRUE)
+
+fwrite(data.table(umi.table)[o,],
+       umi.original.counts,
+       sep="\t", quote=FALSE, row.names=FALSE, col.names=FALSE)
+
+o <- order(umi.inferred.table, decreasing=TRUE)
+
+fwrite(data.table(umi.inferred.table)[o,],
+       umi.inferred.counts,
+       sep="\t", quote=FALSE, row.names=FALSE, col.names=FALSE)
+
+umi.loc.table <- table(umi.matrix[,paste(c(rname,position,inferred_umi),collapse="_"),
+                                  by = 1:nrow(umi.matrix)][,V1])
+
+o <- order(umi.loc.table, decreasing=TRUE)
+
+fwrite(data.table(umi.loc.table)[o,], 
+       umi.position.counts, 
+       sep="\t", quote=FALSE, row.names=FALSE, col.names=FALSE)
+
+
+```
+
+
