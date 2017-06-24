@@ -199,6 +199,17 @@ alignment.position.correction <- function(rdt, pos.max.gap) {
 }
 
 
+get.pcr.duplicates <- function(rdt) {
+  reads <- rdt[,.(inferred_umi, inferred_pos, rname)]
+  unique.fragments <- unique(reads[order(reads$inferred_pos)])
+  for (i in 1:nrow(unique.fragments)) {
+    frag <- unique.fragments[i,]
+    n <- nrow(rdt[inferred_umi==frag[[1]] & inferred_pos==frag[[2]],])
+    unique.fragments[i, num := n]
+  }
+  return (unique.fragments)
+}
+
 ```
 
 
@@ -215,6 +226,9 @@ samdt <- read.sam(test.sam)
 
 # get reference sequence names
 chr <- mixedsort(setdiff(unique(samdt[,rname]), "*"))
+res.table <- list()
+num.pcr.products <- list()
+
 
 # for each reference sequence name (chr)
 for (current.ref in chr) {
@@ -228,54 +242,26 @@ for (current.ref in chr) {
 	# represent each UMI. Positions with more reads with that UMI and that are more 5'
 	# are given higher priority. One read randomly selected to be the non-duplicate
   
-  unique.pos <- sort(unique(rdt$inferred_pos))
+  # Metrics to report:
+  # Number of PCR priducts per IVT fragment
+  num.pcr.products <- rbindlist(list(num.pcr.products, get.pcr.duplicates(rdt)),
+                                use.names=F, fill=F, idcol=F)
   
-  for(i in unique.pos) {
-    rdt.sub <- rdt[position == i, ]
-    rdt.flank.5p <- rdt[position >= (i-umi.window) & position <= (i-1), ]
-    rdt.flank.3p <- rdt[position >= (i+1) & position <= (i+umi.window), ]
-    rdt.flank <- rbindlist(list(rdt.flank.5p, rdt.flank.3p), use.names=F, fill=F, idcol=F)
-    
-    position.umi.count <- sort(table(rdt.sub$inferred_umi))
-    
-    for(k in names(position.umi.count)) {
-      rdt.umi.sub <- rdt.sub[inferred_umi == k, ]
-      rdt.umi.flank.5p <- rdt.flank.5p[inferred_umi == k, ]
-      rdt.umi.flank.3p <- rdt.flank.3p[inferred_umi == k, ]
-      
-      rdt.umi.flank.5p.table <- table(rdt.umi.flank.5p$position)
-		  rdt.umi.flank.3p.table <- table(rdt.umi.flank.3p$position)
-		  
-		  rdt.umi.flank.5p.max <- ifelse(length(rdt.umi.flank.5p.table) == 0, 0,
-		                                max(rdt.umi.flank.5p.table))
-		  rdt.umi.flank.3p.max <- ifelse(length(rdt.umi.flank.3p.table) == 0, 0,
-		                                max(rdt.umi.flank.3p.table))
-		  
-		  if (nrow(rdt.umi.sub) > rdt.umi.flank.5p.max & 
-		      nrow(rdt.umi.sub) >= rdt.umi.flank.3p.max) {
-		    ind <- rdt$qname %in% rdt.umi.sub$qname[-1]
-		    rdt[ind,flag := rdt[ind,flag] + duplication.offset]
-		    rdt[ind,duplicate := TRUE]
-		  } else {
-		    ind = rdt$qname %in% rdt.umi.sub$qname
-		    rdt[ind,duplicate := TRUE]
-		  }
-    }
-  }
-  
-  #fwrite(rdt[,-c("umi", "inferred_umi", "Duplicate")], 
-  #       file=out.sam, sep="\t", quote=FALSE, row.names=FALSE, col.names=FALSE, append=TRUE)
-  
-  
-	umi.matrix <- rbindlist(list(umi.matrix, 
+  # Distribution of average UMI edit distance of all reads
+
+
+	res.table <- rbindlist(list(res.table, 
 	                   rdt[,c("rname", "position","inferred_pos",
-	                          "umi", "inferred_umi", "duplicate")]),
+	                          "umi", "inferred_umi")]),
 	                   use.names=F, fill=F, idcol=F)
 }
 
+# Number of reads with mismatches in UMI
+  num.umi.mismatch <- nrow(res.table[umi != inferred_umi,])
 
-#fwrite(samdt[rname == '*', ], out.sam, sep="\t", quote=FALSE, row.names=FALSE,
-#            col.names=FALSE, append=TRUE)
+# Percentage of reads with shifts in alignment position
+  num.pos.shift <- nrow(res.table[position != inferred_pos,])
+
 
 stats.label <- c("Number of aligned reads:", 
                 "Number of duplicates:", 
