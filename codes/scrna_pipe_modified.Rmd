@@ -19,6 +19,8 @@ output: html_document
 suppressPackageStartupMessages(library(data.table))
 suppressPackageStartupMessages(library(gtools))
 suppressPackageStartupMessages(library(stringdist))
+suppressPackageStartupMessages(library(ggplot2))
+suppressPackageStartupMessages(library(ggthemes))
 
 ```
 
@@ -69,6 +71,57 @@ umi.matrix <- c()
 
 
 ```
+
+
+```{r}
+# ggplot publication theme
+# adapted from Koundinya Desiraju
+# https://rpubs.com/Koundy/71792
+
+theme_Publication <- function(base_size=12, base_family="sans") {
+      (ggthemes::theme_foundation(base_size=base_size, base_family=base_family)
+       + ggplot2::theme(plot.title = element_text(face = "bold",
+                                         size = rel(1), hjust = 0.5),
+               text = element_text(),
+               panel.background = element_rect(colour = NA),
+               plot.background = element_rect(colour = NA),
+               panel.border = element_rect(colour = NA),
+               axis.title = element_text(face = "bold",size = rel(1)),
+               axis.title.y = element_text(angle=90,vjust =2),
+               axis.title.x = element_text(vjust = -0.2),
+               axis.text = element_text(), 
+               axis.line = element_line(colour="black"),
+               axis.ticks = element_line(),
+               panel.grid.major = element_line(colour="#f0f0f0"),
+               panel.grid.minor = element_blank(),
+               legend.key = element_rect(colour = NA),
+               legend.position = "right",
+               legend.direction = "vertical",
+               legend.key.size= unit(0.2, "cm"),
+               legend.margin = margin(0),
+               legend.title = element_text(face="bold"),
+               plot.margin=unit(c(10,5,5,5),"mm"),
+               strip.background=element_rect(colour="#f0f0f0",fill="#f0f0f0"),
+               strip.text = element_text(face="bold")
+          ))
+      
+}
+
+cpalette <- c("#386cb0","#fdb462","#7fc97f","#ef3b2c","#662506","#0A3708",
+                "#a6cee3","#fb9a99","#984ea3","#ffff33","#000000", "#756682")
+
+scale_fill_Publication <- function(...){
+      ggplot2::discrete_scale("fill","Publication",manual_pal(values = cpalette), ...)
+
+}
+
+scale_colour_Publication <- function(...){
+      ggplot2::discrete_scale("colour","Publication",manual_pal(values = cpalette), ...)
+
+}
+```
+
+
 
 
 ```{r}
@@ -210,6 +263,68 @@ get.pcr.duplicates <- function(rdt) {
   return (unique.fragments)
 }
 
+
+plot.stats.sam <- function(res.table, umi.length) {
+  # Calculate relative abundance of UMIs
+  umi.table <- table(res.table[,umi])
+  umi.inferred.table <- table(res.table[,inferred_umi])
+  
+  # Base percentage of UMIs for every read
+  base.matrix <- c()
+  for(i in 1:umi.length) {
+    # consider all reads
+    #rbindlist(list(num.pcr.products, get.pcr.duplicates(rdt)),
+    #                            use.names=F, fill=F, idcol=F)
+    
+    base.matrix <- rbindlist(list(base.matrix,
+                                  data.table(t(data.frame(table(substr(unique(res.table[,umi]),
+                                                                       i, i)), row.names=1)))),
+                             use.names=T, fill=F, idcol=F)
+  }
+  
+  #base.matrix.frac = sweep(base.matrix, 2, length(unique(umi.matrix[,umi])), "/")
+  base.matrix.frac <- base.matrix / length(unique(res.table[,umi]))
+  
+  base.inferred.matrix <- c()
+  for(i in 1:umi.length) {
+    base.inferred.matrix <- cbind(base.inferred.matrix, 
+                                 table(substring(unique(umi.matrix[,inferred_umi]), i, i)))
+  }
+  
+  #base.inferred.matrix.frac = 
+  #  sweep(base.inferred.matrix, 2, length(unique(umi.matrix[,4])), "/")
+  base.inferred.matrix.frac <- base.inferred.matrix / length(unique(umi.matrix[,inferred_umi]))
+  
+  
+  pdf(umi.qc, useDingbats=FALSE)
+  
+  hist(log2(umi.table), freq=FALSE, xlab="Log2(number of reads per UMI)", ylab="UMI Fraction",
+       lwd=2,breaks=20, main="Original UMIs")
+  
+  hist(log2(umi.inferred.table), freq=FALSE, xlab="Log2(number of reads per UMI)", 
+       ylab="UMI Fraction", lwd=2, breaks=20, main="Inferred UMIs")
+  
+  barplot(base.matrix.frac, col=1:4, xlab="UMI position", names.arg=(1:umi.length),
+          ylab="Percent")
+          
+  barplot(base.inferred.matrix.frac, col=1:4, xlab="UMI position", names.arg=(1:umi.length),
+          ylab="Percent")
+  
+  plot(1:10, type="n")
+  legend("center", rownames(base.matrix.frac), col=1:4, pch=15)
+  
+  # histogram of # products per fragment
+  
+  ggplot(num.pcr.products, aes(num)) + geom_histogram(bins=30) + theme_Publication() +
+    ggtitle(paste0("Number of PCR products per IVT fragment for ", fname,".sam")) +
+    xlab("Number of PCR products") + ylab("Frequency")
+  
+  
+  
+  
+  dev.off()
+}
+
 ```
 
 
@@ -259,70 +374,38 @@ for (current.ref in chr) {
 # Number of reads with mismatches in UMI
   num.umi.mismatch <- nrow(res.table[umi != inferred_umi,])
 
-# Percentage of reads with shifts in alignment position
+# Number of reads with shifts in alignment position
   num.pos.shift <- nrow(res.table[position != inferred_pos,])
 
 
 stats.label <- c("Number of aligned reads:", 
-                "Number of duplicates:", 
-                "Percent duplication:",
+                "Number of unique IVT fragments:", 
+                "Percent unique IVT fragments:",
                 "Number of unique UMIs:",
                 "Number of unique UMIs after correction:",
                 "Number of reads with mismatches in UMI:",
-                "Percentage of reads with mismatches in UMI:")
+                "Percentage of reads with mismatches in UMI:",
+                "Number of reads with shifts in alignment position:",
+                "Percentage of reads with shifts in alignment position:",
+                "Average number of products per fragment:",
+                "Median number of products per fragment:")
 
-stats <- c(nrow(umi.matrix), 
-          sum(umi.matrix$duplicate, na.rm = T),
-          sum(umi.matrix$duplicate, na.rm = T)/nrow(umi.matrix),
-          length(unique(umi.matrix[,umi])), 
-          length(unique(umi.matrix[,inferred_umi])),
-          sum(umi.matrix[,umi] != umi.matrix[,inferred_umi]),
-          sum(umi.matrix[,umi] != umi.matrix[,inferred_umi]) / nrow(umi.matrix))
+stats <- c(nrow(res.table), 
+          nrow(num.pcr.products),
+          nrow(num.pcr.products)/nrow(res.table),
+          length(unique(res.table$umi)), 
+          length(unique(res.table$inferred_umi)),
+          num.umi.mismatch,
+          num.umi.mismatch/nrow(res.table),
+          num.pos.shift,
+          num.pos.shift/nrow(res.table),
+          mean(num.pcr.products$num),
+          median(num.pcr.products$num))
 
 fwrite(data.table(stats.label, stats), umi.stats, sep="\t",
             quote=FALSE, row.names=FALSE, col.names=FALSE)
 
-# Calculate relative abundance of UMIs
-umi.table <- table(umi.matrix[,umi])
-umi.inferred.table <- table(umi.matrix[,inferred_umi])
 
-# Base percentage of UMIs at each position
-base.matrix <- c()
-for(i in 1:umi.length) {
-  base.matrix <- cbind(base.matrix, table(substring(unique(umi.matrix[,umi]), i, i)))
-}
-
-#base.matrix.frac = sweep(base.matrix, 2, length(unique(umi.matrix[,umi])), "/")
-base.matrix.frac <- base.matrix / length(unique(umi.matrix[,umi]))
-
-base.inferred.matrix <- c()
-for(i in 1:umi.length) {
-  base.inferred.matrix <- cbind(base.inferred.matrix, 
-                               table(substring(unique(umi.matrix[,inferred_umi]), i, i)))
-}
-
-#base.inferred.matrix.frac = 
-#  sweep(base.inferred.matrix, 2, length(unique(umi.matrix[,4])), "/")
-base.inferred.matrix.frac <- base.inferred.matrix / length(unique(umi.matrix[,inferred_umi]))
-
-
-pdf(umi.qc, useDingbats=FALSE)
-
-hist(log2(umi.table), freq=FALSE, xlab="Log2(number of reads per UMI)", ylab="UMI Fraction",
-     lwd=2,breaks=20, main="Original UMIs")
-
-hist(log2(umi.inferred.table), freq=FALSE, xlab="Log2(number of reads per UMI)", 
-     ylab="UMI Fraction", lwd=2, breaks=20, main="Inferred UMIs")
-
-barplot(base.matrix.frac, col=1:4, xlab="UMI position", names.arg=(1:umi.length),
-        ylab="Percent")
-        
-barplot(base.inferred.matrix.frac, col=1:4, xlab="UMI position", names.arg=(1:umi.length),
-        ylab="Percent")
-
-plot(1:10, type="n")
-legend("center", rownames(base.matrix.frac), col=1:4, pch=15)
-dev.off()
 
 o <- order(umi.table, decreasing=TRUE)
 
