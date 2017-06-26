@@ -21,6 +21,7 @@ suppressPackageStartupMessages(library(gtools))
 suppressPackageStartupMessages(library(stringdist))
 suppressPackageStartupMessages(library(ggplot2))
 suppressPackageStartupMessages(library(ggthemes))
+suppressPackageStartupMessages(library(scales))
 
 ```
 
@@ -97,7 +98,7 @@ theme_Publication <- function(base_size=12, base_family="sans") {
                legend.key = element_rect(colour = NA),
                legend.position = "right",
                legend.direction = "vertical",
-               legend.key.size= unit(0.2, "cm"),
+               legend.key.size= unit(0.5, "cm"),
                legend.margin = margin(0),
                legend.title = element_text(face="bold"),
                plot.margin=unit(c(10,5,5,5),"mm"),
@@ -264,18 +265,28 @@ get.pcr.duplicates <- function(rdt) {
 }
 
 
-plot.stats.sam <- function(res.table, umi.length) {
-  # Calculate relative abundance of UMIs
-  umi.table <- table(res.table[,umi])
-  umi.inferred.table <- table(res.table[,inferred_umi])
+plot.num.frag.per.umi <- function(umi.table, title) {
+  dt <- data.table(umi.table)
   
-  # Base percentage of UMIs for every read
+  breaks <- pretty(range(dt$N), n = nclass.scott(dt$N), min.n = 1)
+  bwidth <- diff(breaks)[1]
+  
+  plot(ggplot(dt, aes(N)) + 
+    geom_histogram(aes(y=..count../sum(..count..)),
+                   binwidth=bwidth, 
+                   closed="left", boundary=0, fill="white", col="black") +
+    theme_Publication() +
+    ggtitle(title) +
+    xlab("Number of reads per UMI") + ylab("UMI fraction"))
+}
+
+
+plot.base.fraction <- function(res.table, umi.length) {
+  # Base percentage of UMIs
   base.matrix <- c()
   for(i in 1:umi.length) {
-    # consider all reads
-    #rbindlist(list(num.pcr.products, get.pcr.duplicates(rdt)),
-    #                            use.names=F, fill=F, idcol=F)
-    
+    # consider all fragments
+
     base.matrix <- rbindlist(list(base.matrix,
                                   data.table(t(data.frame(table(substr(unique(res.table[,umi]),
                                                                        i, i)), row.names=1)))),
@@ -284,45 +295,69 @@ plot.stats.sam <- function(res.table, umi.length) {
   
   #base.matrix.frac = sweep(base.matrix, 2, length(unique(umi.matrix[,umi])), "/")
   base.matrix.frac <- base.matrix / length(unique(res.table[,umi]))
+  base.matrix.frac$ind <- 1:nrow(base.matrix.frac)
+  
+  base.matrix.frac.melt <- melt(base.matrix.frac, id.vars="ind")
+  
+  plot(ggplot(base.matrix.frac.melt, aes(ind, value, fill=variable)) +
+         geom_bar(stat = "identity") + theme_Publication() + scale_fill_Publication() +
+         theme(legend.title=element_blank()) + ggtitle("Original UMIs") +
+         xlab("UMI position") + ylab("Percent"))
+  
   
   base.inferred.matrix <- c()
   for(i in 1:umi.length) {
-    base.inferred.matrix <- cbind(base.inferred.matrix, 
-                                 table(substring(unique(umi.matrix[,inferred_umi]), i, i)))
+    base.inferred.matrix <- 
+      rbindlist(list(base.inferred.matrix, 
+                     data.table(t(data.frame(table(substr(unique(res.table[,inferred_umi]),
+                                                          i, i)), row.names=1)))),
+                use.names=T, fill=F, idcol=F)
   }
   
-  #base.inferred.matrix.frac = 
-  #  sweep(base.inferred.matrix, 2, length(unique(umi.matrix[,4])), "/")
-  base.inferred.matrix.frac <- base.inferred.matrix / length(unique(umi.matrix[,inferred_umi]))
+  base.inferred.matrix.frac <- base.inferred.matrix / length(unique(res.table[,inferred_umi]))
   
+  base.inferred.matrix.frac$ind <- 1:nrow(base.inferred.matrix.frac)
   
-  pdf(umi.qc, useDingbats=FALSE)
+  base.inferred.matrix.frac.melt <- melt(base.inferred.matrix.frac, id.vars="ind")
   
-  hist(log2(umi.table), freq=FALSE, xlab="Log2(number of reads per UMI)", ylab="UMI Fraction",
-       lwd=2,breaks=20, main="Original UMIs")
-  
-  hist(log2(umi.inferred.table), freq=FALSE, xlab="Log2(number of reads per UMI)", 
-       ylab="UMI Fraction", lwd=2, breaks=20, main="Inferred UMIs")
-  
-  barplot(base.matrix.frac, col=1:4, xlab="UMI position", names.arg=(1:umi.length),
-          ylab="Percent")
-          
-  barplot(base.inferred.matrix.frac, col=1:4, xlab="UMI position", names.arg=(1:umi.length),
-          ylab="Percent")
-  
-  plot(1:10, type="n")
-  legend("center", rownames(base.matrix.frac), col=1:4, pch=15)
-  
+  plot(ggplot(base.inferred.matrix.frac.melt, aes(ind, value, fill=variable)) +
+    geom_bar(stat = "identity") + theme_Publication() + scale_fill_Publication() +
+    theme(legend.title=element_blank()) + ggtitle("Inferred UMIs") +
+    xlab("UMI position") + ylab("Percent"))
+}
+
+
+plot.num.products.per.fragment <- function(pcr.products.dt) {
   # histogram of # products per fragment
+  breaks <- pretty(range(pcr.products.dt$num),
+                   n = nclass.scott(pcr.products.dt$num), min.n = 1)
+  bwidth <- diff(breaks)[1]
   
-  ggplot(num.pcr.products, aes(num)) + geom_histogram(bins=30) + theme_Publication() +
-    ggtitle(paste0("Number of PCR products per IVT fragment for ", fname,".sam")) +
-    xlab("Number of PCR products") + ylab("Frequency")
+  plot(ggplot(pcr.products.dt, aes(num)) +
+         geom_histogram(aes(y=..count../sum(..count..)),
+                        binwidth=bwidth, closed="left", boundary=0,
+                        fill="white", col="black") + theme_Publication() +
+    ggtitle("Number of PCR products per IVT fragment") +
+    xlab("Number of PCR products") + ylab("Fraction"))
+}
+
+
+plot.stats.sam <- function(res.table, num.pcr.products.table, umi.length) {
+  # calculate fragment number
+  ori.fragments <- unique(res.table[,.(umi, position)])
+  inf.fragments <- unique(res.table[,.(inferred_umi, inferred_pos)])
   
+  # Calculate relative abundance of UMIs
+  umi.table <- table(ori.fragments$umi)
+  umi.inferred.table <- table(inf.fragments$inferred_umi)
   
+  plot.num.frag.per.umi(umi.table, "Original UMIs")
   
+  plot.num.frag.per.umi(umi.inferred.table, "Inferred UMIs")
   
-  dev.off()
+  plot.base.fraction(res.table, umi.length)
+  
+  plot.num.products.per.fragment(num.pcr.products.table)
 }
 
 ```
@@ -359,7 +394,7 @@ for (current.ref in chr) {
   
   # Metrics to report:
   # Number of PCR priducts per IVT fragment
-  num.pcr.products <- rbindlist(list(num.pcr.products, get.pcr.duplicates(rdt)),
+  num.pcr.products.table <- rbindlist(list(num.pcr.products.table, get.pcr.duplicates(rdt)),
                                 use.names=F, fill=F, idcol=F)
   
   # Distribution of average UMI edit distance of all reads
@@ -372,10 +407,10 @@ for (current.ref in chr) {
 }
 
 # Number of reads with mismatches in UMI
-  num.umi.mismatch <- nrow(res.table[umi != inferred_umi,])
+num.umi.mismatch <- nrow(res.table[umi != inferred_umi,])
 
 # Number of reads with shifts in alignment position
-  num.pos.shift <- nrow(res.table[position != inferred_pos,])
+num.pos.shift <- nrow(res.table[position != inferred_pos,])
 
 
 stats.label <- c("Number of aligned reads:", 
@@ -391,44 +426,23 @@ stats.label <- c("Number of aligned reads:",
                 "Median number of products per fragment:")
 
 stats <- c(nrow(res.table), 
-          nrow(num.pcr.products),
-          nrow(num.pcr.products)/nrow(res.table),
+          nrow(num.pcr.products.table),
+          nrow(num.pcr.products.table)/nrow(res.table),
           length(unique(res.table$umi)), 
           length(unique(res.table$inferred_umi)),
           num.umi.mismatch,
           num.umi.mismatch/nrow(res.table),
           num.pos.shift,
           num.pos.shift/nrow(res.table),
-          mean(num.pcr.products$num),
-          median(num.pcr.products$num))
+          mean(num.pcr.products.table$num),
+          median(num.pcr.products.table$num))
 
 fwrite(data.table(stats.label, stats), umi.stats, sep="\t",
             quote=FALSE, row.names=FALSE, col.names=FALSE)
 
-
-
-o <- order(umi.table, decreasing=TRUE)
-
-fwrite(data.table(umi.table)[o,],
-       umi.original.counts,
-       sep="\t", quote=FALSE, row.names=FALSE, col.names=FALSE)
-
-o <- order(umi.inferred.table, decreasing=TRUE)
-
-fwrite(data.table(umi.inferred.table)[o,],
-       umi.inferred.counts,
-       sep="\t", quote=FALSE, row.names=FALSE, col.names=FALSE)
-
-umi.loc.table <- table(umi.matrix[,paste(c(rname,position,inferred_umi),collapse="_"),
-                                  by = 1:nrow(umi.matrix)][,V1])
-
-o <- order(umi.loc.table, decreasing=TRUE)
-
-fwrite(data.table(umi.loc.table)[o,], 
-       umi.position.counts, 
-       sep="\t", quote=FALSE, row.names=FALSE, col.names=FALSE)
-
-
+pdf(umi.qc)
+plot.stats.sam(res.table, num.pcr.products.table, umi.length)
+dev.off()
 ```
 
 
