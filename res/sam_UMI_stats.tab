@@ -1,0 +1,4 @@
+filename	num.aligned.reads	num.unique.fragments	percent.unique.fragments	num.unique.UMI	num.unique.UMI.corrected	num.reads.UMI.mismatch	percent.reads.UMI.mismatch	num.reads.pos.shift	percent.reads.pos.shift	avg.products.per.fragment	median.products.per.fragment
+CS_1017_sample_0001	4072	1330	0.326620825147348	621	606	79	0.0194007858546169	206	0.0505893909626719	3.06165413533835	1
+CS_1017_sample_0002	34696	3773	0.108744523864422	803	748	3344	0.0963799861655522	1462	0.0421374221812313	9.19586535913067	2
+CS_1017_sample_0003	85015	8641	0.101640886902311	990	977	8967	0.105475504322767	4001	0.0470622831265071	9.83856035181113	3

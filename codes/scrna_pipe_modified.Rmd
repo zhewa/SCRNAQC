@@ -22,6 +22,7 @@ suppressPackageStartupMessages(library(stringdist))
 suppressPackageStartupMessages(library(ggplot2))
 suppressPackageStartupMessages(library(ggthemes))
 suppressPackageStartupMessages(library(scales))
+suppressPackageStartupMessages(library(gridExtra))
 
 ```
 
@@ -33,9 +34,11 @@ suppressPackageStartupMessages(library(scales))
 # umi.edit = as.numeric(opt$options$umi_edit_dist)
 # umi.window = as.numeric(opt$options$window)
 # umi.length = as.numeric(opt$options$umi_length)
-test.sam <- "../data/CS_1017_sample_0001.sam"
-fname <- last(strsplit(substr(test.sam, start=1,
-                              stop=nchar(test.sam)-4), split="/", fixed=T)[[1]])
+
+# SAM file directory
+test.sam <- "../data/sam/CS_1017_sample_0001.sam"
+
+sam.dir <- "../data/sam/"
 
 # acceptable umi sequence mismatches 
 umi.edit <- 1
@@ -47,23 +50,23 @@ umi.max.gap <- 20
 pos.max.gap <- 3
 
 # 
-umi.length <- 5
-duplication.offset = 1024L  # SAM specification for duplication in FLAG column
+#umi.length <- 5
+
+#duplication.offset = 1024L  # SAM specification for duplication in FLAG column
 
 output.dir <- "../res/"
 
-# SAM file directory
-out.sam <- paste0(output.dir, fname, ".tab")
+#out.sam <- paste0(output.dir, fname, ".tab")
 
-umi.stats <- paste0(output.dir, fname, "_UMI_stats.tab")
+#umi.stats <- paste0(output.dir, fname, "_UMI_stats.tab")
 
-umi.qc <- paste0(output.dir, fname, "_UMI_QC_plots.pdf")
+#umi.qc <- paste0(output.dir, fname, "_UMI_QC_plots.pdf")
 
-umi.original.counts <- paste0(output.dir, fname, "_UMI_original_counts.txt")
+#umi.original.counts <- paste0(output.dir, fname, "_UMI_original_counts.txt")
 
-umi.inferred.counts <- paste0(output.dir, fname, "_UMI_inferred_counts.txt")
+#umi.inferred.counts <- paste0(output.dir, fname, "_UMI_inferred_counts.txt")
 
-umi.position.counts <- paste0(output.dir, fname, "_UMI_position_counts.txt")
+#umi.position.counts <- paste0(output.dir, fname, "_UMI_position_counts.txt")
   
 # remove output file if exists
 #if (file.exists(out.sam)) file.remove(out.sam)
@@ -152,8 +155,6 @@ read.sam <- function(samfile){
 }
 
 umi.mismatch.correction <- function(samdt, current.ref, umi.max.gap, umi.edit) {
-  cat("Now processing", current.ref, "...\n")
-  
   # Add inferred_umi info to reference data table
   rdt <- samdt[rname == current.ref,]
   rdt[, c("umi", "inferred_umi") := 
@@ -271,13 +272,14 @@ plot.num.frag.per.umi <- function(umi.table, title) {
   breaks <- pretty(range(dt$N), n = nclass.scott(dt$N), min.n = 1)
   bwidth <- diff(breaks)[1]
   
-  plot(ggplot(dt, aes(N)) + 
+  g <- ggplot(dt, aes(N)) + 
     geom_histogram(aes(y=..count../sum(..count..)),
                    binwidth=bwidth, 
                    closed="left", boundary=0, fill="white", col="black") +
     theme_Publication() +
     ggtitle(title) +
-    xlab("Number of reads per UMI") + ylab("UMI fraction"))
+    xlab("Number of fragments per UMI") + ylab("UMI fraction")
+  return (g)
 }
 
 
@@ -292,17 +294,15 @@ plot.base.fraction <- function(res.table, umi.length) {
                                                                        i, i)), row.names=1)))),
                              use.names=T, fill=F, idcol=F)
   }
-  
-  #base.matrix.frac = sweep(base.matrix, 2, length(unique(umi.matrix[,umi])), "/")
+
   base.matrix.frac <- base.matrix / length(unique(res.table[,umi]))
   base.matrix.frac$ind <- 1:nrow(base.matrix.frac)
-  
   base.matrix.frac.melt <- melt(base.matrix.frac, id.vars="ind")
   
-  plot(ggplot(base.matrix.frac.melt, aes(ind, value, fill=variable)) +
+  g1 <- ggplot(base.matrix.frac.melt, aes(ind, value, fill=variable)) +
          geom_bar(stat = "identity") + theme_Publication() + scale_fill_Publication() +
          theme(legend.title=element_blank()) + ggtitle("Original UMIs") +
-         xlab("UMI position") + ylab("Percent"))
+         xlab("UMI position") + ylab("Percent")
   
   
   base.inferred.matrix <- c()
@@ -320,10 +320,11 @@ plot.base.fraction <- function(res.table, umi.length) {
   
   base.inferred.matrix.frac.melt <- melt(base.inferred.matrix.frac, id.vars="ind")
   
-  plot(ggplot(base.inferred.matrix.frac.melt, aes(ind, value, fill=variable)) +
+  g2 <- ggplot(base.inferred.matrix.frac.melt, aes(ind, value, fill=variable)) +
     geom_bar(stat = "identity") + theme_Publication() + scale_fill_Publication() +
     theme(legend.title=element_blank()) + ggtitle("Inferred UMIs") +
-    xlab("UMI position") + ylab("Percent"))
+    xlab("UMI position") + ylab("Percent")
+  return (list(g1,g2))
 }
 
 
@@ -333,16 +334,36 @@ plot.num.products.per.fragment <- function(pcr.products.dt) {
                    n = nclass.scott(pcr.products.dt$num), min.n = 1)
   bwidth <- diff(breaks)[1]
   
-  plot(ggplot(pcr.products.dt, aes(num)) +
+  g <- ggplot(pcr.products.dt, aes(num)) +
          geom_histogram(aes(y=..count../sum(..count..)),
                         binwidth=bwidth, closed="left", boundary=0,
                         fill="white", col="black") + theme_Publication() +
     ggtitle("Number of PCR products per IVT fragment") +
-    xlab("Number of PCR products") + ylab("Fraction"))
+    xlab("Number of PCR products") + ylab("Fraction")
+  return (g)
 }
 
 
-plot.stats.sam <- function(res.table, num.pcr.products.table, umi.length) {
+plot.num.products.per.fragment <- function(pcr.products.dt) {
+  # histogram of # products per fragment
+  pcr.products.dt[,num := log2(num)]
+  breaks <- pretty(range(pcr.products.dt$num),
+                   n = nclass.scott(pcr.products.dt$num), min.n = 1)
+  bwidth <- diff(breaks)[1]
+  
+  g <- ggplot(pcr.products.dt, aes(num)) +
+         geom_histogram(aes(y=..count../sum(..count..)),
+                        binwidth=bwidth, closed="left", boundary=0,
+                        fill="white", col="black") +
+    ggtitle("Number of PCR products per IVT fragment") +
+    xlab(expression(bold(Log[2](Number~of~PCR~products)))) +
+    ylab("Fraction") + theme_Publication()
+  
+  return (g)
+}
+
+
+plot.stats.sam <- function(res.table, num.pcr.products.table, umi.length, fname) {
   # calculate fragment number
   ori.fragments <- unique(res.table[,.(umi, position)])
   inf.fragments <- unique(res.table[,.(inferred_umi, inferred_pos)])
@@ -351,98 +372,138 @@ plot.stats.sam <- function(res.table, num.pcr.products.table, umi.length) {
   umi.table <- table(ori.fragments$umi)
   umi.inferred.table <- table(inf.fragments$inferred_umi)
   
-  plot.num.frag.per.umi(umi.table, "Original UMIs")
+  nc = 2
   
-  plot.num.frag.per.umi(umi.inferred.table, "Inferred UMIs")
+  g1 <- plot.num.frag.per.umi(umi.table, "Original UMIs")
   
-  plot.base.fraction(res.table, umi.length)
+  g2 <- plot.num.frag.per.umi(umi.inferred.table, "Inferred UMIs")
   
-  plot.num.products.per.fragment(num.pcr.products.table)
+  g3.g4 <- plot.base.fraction(res.table, umi.length)
+  
+  g5 <- plot.num.products.per.fragment(num.pcr.products.table)
+  
+  return (gridExtra::arrangeGrob(grobs = list(g1,g2,g3.g4[[1]], g3.g4[[2]], g5), ncol = nc, 
+                            top = grid::textGrob(paste0(fname,".sam"))))
+}
+
+
+QC.sam <- function(sam, umi.edit, umi.max.gap, pos.max.gap, output.dir) {
+  # read in SAM file
+  samdt <- read.sam(sam)
+  fname <- strsplit(last(strsplit(sam, split = "/")[[1]]), split = "\\.")[[1]][1]
+  umi.length <- as.numeric(nchar(samdt[1,tstrsplit(qname, ":", fixed=TRUE,
+                                                   keep=length(tstrsplit(qname, ":", fixed=TRUE)))]))
+  # output file names
+  umi.stats <- paste0(output.dir, fname, "_UMI_stats.tab")
+
+  umi.qc <- paste0(output.dir, fname, "_UMI_QC_plots.pdf")
+  
+  
+  # get reference sequence names
+  chr <- mixedsort(setdiff(unique(samdt[,rname]), "*"))
+  res.table <- list()
+  num.pcr.products.table <- list()
+  
+  
+  # for each reference sequence name (chr)
+  for (current.ref in chr) {
+    # correct umi mismatch
+    rdt <- umi.mismatch.correction(samdt, current.ref, umi.max.gap, umi.edit)
+    # correct alignment position error
+    rdt <- alignment.position.correction(rdt, pos.max.gap)
+    
+    
+    # Now that UMIs have been fixed, go through each position and pick one read to
+  	# represent each UMI. Positions with more reads with that UMI and that are more 5'
+  	# are given higher priority. One read randomly selected to be the non-duplicate
+    
+    # Metrics to report:
+    # Number of PCR priducts per IVT fragment
+    num.pcr.products.table <- rbindlist(list(num.pcr.products.table, get.pcr.duplicates(rdt)),
+                                  use.names=F, fill=F, idcol=F)
+    
+    # Distribution of average UMI edit distance of all reads
+  
+  
+  	res.table <- rbindlist(list(res.table, 
+  	                   rdt[,c("rname", "position","inferred_pos",
+  	                          "umi", "inferred_umi")]),
+  	                   use.names=F, fill=F, idcol=F)
+  }
+  
+  # Number of reads with mismatches in UMI
+  num.umi.mismatch <- nrow(res.table[umi != inferred_umi,])
+  
+  # Number of reads with shifts in alignment position
+  num.pos.shift <- nrow(res.table[position != inferred_pos,])
+  
+  
+  stats.label <- c("filename",
+                   "num.aligned.reads",
+                   "num.unique.fragments",
+                   "percent.unique.fragments",
+                   "num.unique.UMI",
+                   "num.unique.UMI.corrected",
+                   "num.reads.UMI.mismatch",
+                   "percent.reads.UMI.mismatch",
+                   "num.reads.pos.shift",
+                   "percent.reads.pos.shift",
+                   "avg.products.per.fragment",
+                   "median.products.per.fragment")
+  
+  stats <- c(fname,
+             nrow(res.table), 
+             nrow(num.pcr.products.table),
+             nrow(num.pcr.products.table)/nrow(res.table),
+             length(unique(res.table$umi)), 
+             length(unique(res.table$inferred_umi)),
+             num.umi.mismatch,
+             num.umi.mismatch/nrow(res.table),
+             num.pos.shift,
+             num.pos.shift/nrow(res.table),
+             mean(num.pcr.products.table$num),
+             median(num.pcr.products.table$num))
+  
+  dt.stats <- data.table(matrix(stats, ncol=length(stats.label), nrow=1))
+  colnames(dt.stats) <- stats.label
+  
+  grob <- plot.stats.sam(res.table, num.pcr.products.table, umi.length, fname)
+  return (list(dt.stats, grob))
+}
+
+
+batch.QC.sam <- function(sam.dir, umi.edit, umi.max.gap, pos.max.gap, output.dir) {
+  # Batch QC for one plate
+  files <- list.files(sam.dir, full.names = T)
+  stats.sam <- vector(length(files), mode="list")
+  plots.sam <- vector(length(files), mode="list")
+  
+  for (i in 1:length(files)) {
+    cat("Now processing", files[i], "...\n")
+    sam.res <- QC.sam(files[i], umi.edit, umi.max.gap, pos.max.gap, output.dir)
+    stats.sam[[i]] <- sam.res[[1]]
+    plots.sam[[i]] <- sam.res[[2]]
+  }
+  
+  stats.res <- rbindlist(stats.sam, use.names=F, fill=F, idcol=F)
+  
+  fwrite(stats.res, paste0(output.dir, last(strsplit(sam.dir, split="/")[[1]]),
+                           "_UMI_stats.tab"), sep="\t",
+         quote=F, row.names=F, col.names=T)
+  
+  pdf(paste0(output.dir, last(strsplit(sam.dir, split="/")[[1]]), ".pdf"))
+  for (i in 1:length(files)) {
+    grid.arrange(plots.sam[[i]])
+  }
+  graphics.off()
 }
 
 ```
 
 
-
-
-
-
-
-
 ```{r}
-
-# read in SAM file
-samdt <- read.sam(test.sam)
-
-# get reference sequence names
-chr <- mixedsort(setdiff(unique(samdt[,rname]), "*"))
-res.table <- list()
-num.pcr.products <- list()
-
-
-# for each reference sequence name (chr)
-for (current.ref in chr) {
-  # correct umi mismatch
-  rdt <- umi.mismatch.correction(samdt, current.ref, umi.max.gap, umi.edit)
-  # correct alignment position error
-  rdt <- alignment.position.correction(rdt, pos.max.gap)
-  
-  
-  # Now that UMIs have been fixed, go through each position and pick one read to
-	# represent each UMI. Positions with more reads with that UMI and that are more 5'
-	# are given higher priority. One read randomly selected to be the non-duplicate
-  
-  # Metrics to report:
-  # Number of PCR priducts per IVT fragment
-  num.pcr.products.table <- rbindlist(list(num.pcr.products.table, get.pcr.duplicates(rdt)),
-                                use.names=F, fill=F, idcol=F)
-  
-  # Distribution of average UMI edit distance of all reads
-
-
-	res.table <- rbindlist(list(res.table, 
-	                   rdt[,c("rname", "position","inferred_pos",
-	                          "umi", "inferred_umi")]),
-	                   use.names=F, fill=F, idcol=F)
-}
-
-# Number of reads with mismatches in UMI
-num.umi.mismatch <- nrow(res.table[umi != inferred_umi,])
-
-# Number of reads with shifts in alignment position
-num.pos.shift <- nrow(res.table[position != inferred_pos,])
-
-
-stats.label <- c("Number of aligned reads:", 
-                "Number of unique IVT fragments:", 
-                "Percent unique IVT fragments:",
-                "Number of unique UMIs:",
-                "Number of unique UMIs after correction:",
-                "Number of reads with mismatches in UMI:",
-                "Percentage of reads with mismatches in UMI:",
-                "Number of reads with shifts in alignment position:",
-                "Percentage of reads with shifts in alignment position:",
-                "Average number of products per fragment:",
-                "Median number of products per fragment:")
-
-stats <- c(nrow(res.table), 
-          nrow(num.pcr.products.table),
-          nrow(num.pcr.products.table)/nrow(res.table),
-          length(unique(res.table$umi)), 
-          length(unique(res.table$inferred_umi)),
-          num.umi.mismatch,
-          num.umi.mismatch/nrow(res.table),
-          num.pos.shift,
-          num.pos.shift/nrow(res.table),
-          mean(num.pcr.products.table$num),
-          median(num.pcr.products.table$num))
-
-fwrite(data.table(stats.label, stats), umi.stats, sep="\t",
-            quote=FALSE, row.names=FALSE, col.names=FALSE)
-
-pdf(umi.qc)
-plot.stats.sam(res.table, num.pcr.products.table, umi.length)
-dev.off()
+# batch QC for one plate
+batch.QC.sam(sam.dir, umi.edit, umi.max.gap, pos.max.gap, output.dir)
 ```
 
 
