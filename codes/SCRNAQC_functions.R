@@ -1,165 +1,89 @@
----
-title: "scrna_pipe"
-author: "Zhe"
-date: "June 8, 2017"
-output: html_document
----
+#!/usr/bin/env Rscript
+
+# SCRNAQC functions
+# Zhe Wang
+# 20170628
 
 
-```{r}
-# scRNA-seq pipeline
-# Keep track of In vitro transcription RNA molecules
-# Keep track of final PCR amplification products
 
-# Input: demultiplexed SAM file
-# Output: count matrix after UMI correction, 
-
-
-# required packages:
-suppressPackageStartupMessages(library(data.table))
-suppressPackageStartupMessages(library(gtools))
-suppressPackageStartupMessages(library(stringdist))
-suppressPackageStartupMessages(library(ggplot2))
-suppressPackageStartupMessages(library(ggthemes))
-suppressPackageStartupMessages(library(scales))
-suppressPackageStartupMessages(library(gridExtra))
-
-```
-
-
-```{r}
-##  parameters
-
-
-# umi.edit = as.numeric(opt$options$umi_edit_dist)
-# umi.window = as.numeric(opt$options$window)
-# umi.length = as.numeric(opt$options$umi_length)
-
-# SAM file directory
-test.sam <- "../data/sam/CS_1017_sample_0001.sam"
-
-sam.dir <- "../data/sam/"
-
-# acceptable umi sequence mismatches 
-umi.edit <- 1
-
-# default sliding window for fragmentation discrepencies
-umi.max.gap <- 20
-
-# default sliding window for alignment position correction
-pos.max.gap <- 3
-
-# 
-#umi.length <- 5
-
-#duplication.offset = 1024L  # SAM specification for duplication in FLAG column
-
-output.dir <- "../res/"
-
-#out.sam <- paste0(output.dir, fname, ".tab")
-
-#umi.stats <- paste0(output.dir, fname, "_UMI_stats.tab")
-
-#umi.qc <- paste0(output.dir, fname, "_UMI_QC_plots.pdf")
-
-#umi.original.counts <- paste0(output.dir, fname, "_UMI_original_counts.txt")
-
-#umi.inferred.counts <- paste0(output.dir, fname, "_UMI_inferred_counts.txt")
-
-#umi.position.counts <- paste0(output.dir, fname, "_UMI_position_counts.txt")
-  
-# remove output file if exists
-#if (file.exists(out.sam)) file.remove(out.sam)
-
-umi.matrix <- c()
-
-
-```
-
-
-```{r}
 # ggplot publication theme
 # adapted from Koundinya Desiraju
 # https://rpubs.com/Koundy/71792
-
 theme_Publication <- function(base_size=12, base_family="sans") {
-      (ggthemes::theme_foundation(base_size=base_size, base_family=base_family)
-       + ggplot2::theme(plot.title = element_text(face = "bold",
-                                         size = rel(1), hjust = 0.5),
-               text = element_text(),
-               panel.background = element_rect(colour = NA),
-               plot.background = element_rect(colour = NA),
-               panel.border = element_rect(colour = NA),
-               axis.title = element_text(face = "bold",size = rel(1)),
-               axis.title.y = element_text(angle=90,vjust =2),
-               axis.title.x = element_text(vjust = -0.2),
-               axis.text = element_text(), 
-               axis.line = element_line(colour="black"),
-               axis.ticks = element_line(),
-               panel.grid.major = element_line(colour="#f0f0f0"),
-               panel.grid.minor = element_blank(),
-               legend.key = element_rect(colour = NA),
-               legend.position = "right",
-               legend.direction = "vertical",
-               legend.key.size= unit(0.5, "cm"),
-               legend.margin = margin(0),
-               legend.title = element_text(face="bold"),
-               plot.margin=unit(c(10,5,5,5),"mm"),
-               strip.background=element_rect(colour="#f0f0f0",fill="#f0f0f0"),
-               strip.text = element_text(face="bold")
-          ))
-      
+  (ggthemes::theme_foundation(base_size=base_size, base_family=base_family)
+   + ggplot2::theme(plot.title = element_text(face = "bold",
+                                              size = rel(1), hjust = 0.5),
+                    text = element_text(),
+                    panel.background = element_rect(colour = NA),
+                    plot.background = element_rect(colour = NA),
+                    panel.border = element_rect(colour = NA),
+                    axis.title = element_text(face = "bold",size = rel(1)),
+                    axis.title.y = element_text(angle=90,vjust =2),
+                    axis.title.x = element_text(vjust = -0.2),
+                    axis.text = element_text(), 
+                    axis.line = element_line(colour="black"),
+                    axis.ticks = element_line(),
+                    panel.grid.major = element_line(colour="#f0f0f0"),
+                    panel.grid.minor = element_blank(),
+                    legend.key = element_rect(colour = NA),
+                    legend.position = "right",
+                    legend.direction = "vertical",
+                    legend.key.size= unit(0.5, "cm"),
+                    legend.margin = margin(0),
+                    legend.title = element_text(face="bold"),
+                    plot.margin=unit(c(10,5,5,5),"mm"),
+                    strip.background=element_rect(colour="#f0f0f0",fill="#f0f0f0"),
+                    strip.text = element_text(face="bold")
+   ))
+  
 }
 
-cpalette <- c("#386cb0","#fdb462","#7fc97f","#ef3b2c","#662506","#0A3708",
-                "#a6cee3","#fb9a99","#984ea3","#ffff33","#000000", "#756682")
 
 scale_fill_Publication <- function(...){
-      ggplot2::discrete_scale("fill","Publication",manual_pal(values = cpalette), ...)
-
+  ggplot2::discrete_scale("fill","Publication",manual_pal(values = cpalette), ...)
+  
 }
+
 
 scale_colour_Publication <- function(...){
-      ggplot2::discrete_scale("colour","Publication",manual_pal(values = cpalette), ...)
-
+  ggplot2::discrete_scale("colour","Publication",manual_pal(values = cpalette), ...)
+  
 }
-```
 
 
-
-
-```{r}
-# functions
-
+# read a sam file
+# return a data table of the file
 read.sam <- function(samfile){
   # get the maximum number of columns per row
   maxncol <- max(count.fields(samfile, sep="\t", quote="", comment.char=""))
   
   # read in SAM file
   sam <- read.table(samfile, 
-              sep="\t",
-              quote="",
-              fill=T, 
-              header=F,
-              stringsAsFactors=F,
-              na.strings=NULL,
-              comment.char="@",
-              col.names=1:maxncol)
+                    sep="\t",
+                    quote="",
+                    fill=T, 
+                    header=F,
+                    stringsAsFactors=F,
+                    na.strings=NULL,
+                    comment.char="@",
+                    col.names=1:maxncol)
   
   colnames(sam)[1:11] <- c("qname", "flag", "rname", "position", "mapq", "cigar",
-                             "rnext", "pnext", "tlen", "seq", "qual")
+                           "rnext", "pnext", "tlen", "seq", "qual")
   
   # convert to data.table object
   samdt <- data.table(sam, check.names=T)
   return (samdt)
 }
 
+
+# correct umi mismatch
 umi.mismatch.correction <- function(samdt, current.ref, umi.max.gap, umi.edit) {
   # Add inferred_umi info to reference data table
   rdt <- samdt[rname == current.ref,]
   rdt[, c("umi", "inferred_umi") := 
-      tstrsplit(qname, ":", fixed=TRUE, 
-                keep=length(tstrsplit(qname, ":", fixed=TRUE)))]
+        tstrsplit(qname, ":", fixed=TRUE, 
+                  keep=length(tstrsplit(qname, ":", fixed=TRUE)))]
   
   # Correct UMIs with sequencing errors by looking at UMIs in surrounding region
   
@@ -176,9 +100,9 @@ umi.mismatch.correction <- function(samdt, current.ref, umi.max.gap, umi.edit) {
       # temporary solution with only one iteration
       # need a recursive solution for some special cases
       sdm <- stringdistmatrix(names(all.umi.count), names(all.umi.count))
-	    diag(sdm) <- 100
-	    rownames(sdm) <- names(all.umi.count)
-		  colnames(sdm) <- names(all.umi.count)
+      diag(sdm) <- 100
+      rownames(sdm) <- names(all.umi.count)
+      colnames(sdm) <- names(all.umi.count)
       
       for (j in colnames(sdm)) {
         if (min(sdm[j,]) <= umi.edit) {
@@ -243,7 +167,7 @@ alignment.position.correction <- function(rdt, pos.max.gap) {
   for (i in pos.group) {
     rdt.sub <- rdt[position %in% i, ]
     unique.umi.count <- table(rdt.sub$inferred_umi)
-
+    
     for (j in 1:length(unique.umi.count)) { 
       rdt.sub.sub <- rdt.sub[inferred_umi == names(unique.umi.count)[j], ]
       rdt[position %in% i & inferred_umi == names(unique.umi.count)[j], 
@@ -263,6 +187,11 @@ get.pcr.duplicates <- function(rdt) {
     unique.fragments[i, num := n]
   }
   return (unique.fragments)
+}
+
+
+num.amplified.frag <- function(num.pcr.products.table) {
+  return (sum(num.pcr.products.table$num >= 2))
 }
 
 
@@ -288,21 +217,21 @@ plot.base.fraction <- function(res.table, umi.length) {
   base.matrix <- c()
   for(i in 1:umi.length) {
     # consider all fragments
-
+    
     base.matrix <- rbindlist(list(base.matrix,
                                   data.table(t(data.frame(table(substr(unique(res.table[,umi]),
                                                                        i, i)), row.names=1)))),
                              use.names=T, fill=F, idcol=F)
   }
-
+  
   base.matrix.frac <- base.matrix / length(unique(res.table[,umi]))
   base.matrix.frac$ind <- 1:nrow(base.matrix.frac)
   base.matrix.frac.melt <- melt(base.matrix.frac, id.vars="ind")
   
   g1 <- ggplot(base.matrix.frac.melt, aes(ind, value, fill=variable)) +
-         geom_bar(stat = "identity") + theme_Publication() + scale_fill_Publication() +
-         theme(legend.title=element_blank()) + ggtitle("Original UMIs") +
-         xlab("UMI position") + ylab("Percent")
+    geom_bar(stat = "identity") + theme_Publication() + scale_fill_Publication() +
+    theme(legend.title=element_blank()) + ggtitle("Original UMIs") +
+    xlab("UMI position") + ylab("Percent")
   
   
   base.inferred.matrix <- c()
@@ -335,9 +264,9 @@ plot.num.products.per.fragment <- function(pcr.products.dt) {
   bwidth <- diff(breaks)[1]
   
   g <- ggplot(pcr.products.dt, aes(num)) +
-         geom_histogram(aes(y=..count../sum(..count..)),
-                        binwidth=bwidth, closed="left", boundary=0,
-                        fill="white", col="black") + theme_Publication() +
+    geom_histogram(aes(y=..count../sum(..count..)),
+                   binwidth=bwidth, closed="left", boundary=0,
+                   fill="white", col="black") + theme_Publication() +
     ggtitle("Number of PCR products per IVT fragment") +
     xlab("Number of PCR products") + ylab("Fraction")
   return (g)
@@ -352,9 +281,9 @@ plot.num.products.per.fragment <- function(pcr.products.dt) {
   bwidth <- diff(breaks)[1]
   
   g <- ggplot(pcr.products.dt, aes(num)) +
-         geom_histogram(aes(y=..count../sum(..count..)),
-                        binwidth=bwidth, closed="left", boundary=0,
-                        fill="white", col="black") +
+    geom_histogram(aes(y=..count../sum(..count..)),
+                   binwidth=bwidth, closed="left", boundary=0,
+                   fill="white", col="black") +
     ggtitle("Number of PCR products per IVT fragment") +
     xlab(expression(bold(Log[2](Number~of~PCR~products)))) +
     ylab("Fraction") + theme_Publication()
@@ -383,7 +312,7 @@ plot.stats.sam <- function(res.table, num.pcr.products.table, umi.length, fname)
   g5 <- plot.num.products.per.fragment(num.pcr.products.table)
   
   return (gridExtra::arrangeGrob(grobs = list(g1,g2,g3.g4[[1]], g3.g4[[2]], g5), ncol = nc, 
-                            top = grid::textGrob(paste0(fname,".sam"))))
+                                 top = grid::textGrob(paste0(fname,".sam"))))
 }
 
 
@@ -395,7 +324,7 @@ QC.sam <- function(sam, umi.edit, umi.max.gap, pos.max.gap, output.dir) {
                                                    keep=length(tstrsplit(qname, ":", fixed=TRUE)))]))
   # output file names
   umi.stats <- paste0(output.dir, fname, "_UMI_stats.tab")
-
+  
   umi.qc <- paste0(output.dir, fname, "_UMI_QC_plots.pdf")
   
   
@@ -414,21 +343,21 @@ QC.sam <- function(sam, umi.edit, umi.max.gap, pos.max.gap, output.dir) {
     
     
     # Now that UMIs have been fixed, go through each position and pick one read to
-  	# represent each UMI. Positions with more reads with that UMI and that are more 5'
-  	# are given higher priority. One read randomly selected to be the non-duplicate
+    # represent each UMI. Positions with more reads with that UMI and that are more 5'
+    # are given higher priority. One read randomly selected to be the non-duplicate
     
     # Metrics to report:
     # Number of PCR priducts per IVT fragment
     num.pcr.products.table <- rbindlist(list(num.pcr.products.table, get.pcr.duplicates(rdt)),
-                                  use.names=F, fill=F, idcol=F)
+                                        use.names=F, fill=F, idcol=F)
     
     # Distribution of average UMI edit distance of all reads
-  
-  
-  	res.table <- rbindlist(list(res.table, 
-  	                   rdt[,c("rname", "position","inferred_pos",
-  	                          "umi", "inferred_umi")]),
-  	                   use.names=F, fill=F, idcol=F)
+    
+    
+    res.table <- rbindlist(list(res.table, 
+                                rdt[,c("rname", "position","inferred_pos",
+                                       "umi", "inferred_umi")]),
+                           use.names=F, fill=F, idcol=F)
   }
   
   # Number of reads with mismatches in UMI
@@ -449,7 +378,9 @@ QC.sam <- function(sam, umi.edit, umi.max.gap, pos.max.gap, output.dir) {
                    "num.reads.pos.shift",
                    "percent.reads.pos.shift",
                    "avg.products.per.fragment",
-                   "median.products.per.fragment")
+                   "median.products.per.fragment",
+                   "num.amplified.fragments",
+                   "percent.amplified.fragments")
   
   stats <- c(fname,
              nrow(res.table), 
@@ -462,7 +393,9 @@ QC.sam <- function(sam, umi.edit, umi.max.gap, pos.max.gap, output.dir) {
              num.pos.shift,
              num.pos.shift/nrow(res.table),
              mean(num.pcr.products.table$num),
-             median(num.pcr.products.table$num))
+             median(num.pcr.products.table$num),
+             num.amplified.frag(num.pcr.products.table),
+             num.amplified.frag(num.pcr.products.table)/nrow(num.pcr.products.table))
   
   dt.stats <- data.table(matrix(stats, ncol=length(stats.label), nrow=1))
   colnames(dt.stats) <- stats.label
@@ -472,7 +405,9 @@ QC.sam <- function(sam, umi.edit, umi.max.gap, pos.max.gap, output.dir) {
 }
 
 
-batch.QC.sam <- function(sam.dir, umi.edit, umi.max.gap, pos.max.gap, output.dir) {
+# batch QC for one plate
+batch.QC.sam <- function(sam.dir, umi.edit = 1, umi.max.gap = 20,
+                         pos.max.gap = 3, output.dir = paste0(sam.dir,"SCRNAQC_res/")) {
   # Batch QC for one plate
   files <- list.files(sam.dir, full.names = T)
   stats.sam <- vector(length(files), mode="list")
@@ -497,13 +432,3 @@ batch.QC.sam <- function(sam.dir, umi.edit, umi.max.gap, pos.max.gap, output.dir
   }
   graphics.off()
 }
-
-```
-
-
-```{r}
-# batch QC for one plate
-batch.QC.sam(sam.dir, umi.edit, umi.max.gap, pos.max.gap, output.dir)
-```
-
-
