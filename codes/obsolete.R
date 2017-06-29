@@ -59,3 +59,11 @@ umi.mismatch.correction.2 <- function(samdt, current.ref, umi.window, umi.edit) 
   }
   return (rdt)
 }
+
+
+na.to.0 = function(dt) {
+  # by number (slightly faster than by name)
+  for (j in seq_len(ncol(dt)))
+    set(dt, which(is.na(dt[[j]])), j, 0)
+  return (dt)
+}

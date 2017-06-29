@@ -217,20 +217,19 @@ plot.base.fraction <- function(res.table, umi.length) {
   base.matrix <- c()
   for(i in 1:umi.length) {
     # consider all fragments
-    
     base.matrix <- rbindlist(list(base.matrix,
                                   data.table(t(data.frame(table(substr(unique(res.table[,umi]),
                                                                        i, i)), row.names=1)))),
-                             use.names=T, fill=F, idcol=F)
+                             use.names=T, fill=T, idcol=F)
   }
   
   base.matrix.frac <- base.matrix / length(unique(res.table[,umi]))
   base.matrix.frac$ind <- 1:nrow(base.matrix.frac)
   base.matrix.frac.melt <- melt(base.matrix.frac, id.vars="ind")
   
-  g1 <- ggplot(base.matrix.frac.melt, aes(ind, value, fill=variable)) +
+  g1 <- ggplot(base.matrix.frac.melt[value != "NA",], aes(ind, value, fill=variable)) +
     geom_bar(stat = "identity") + theme_Publication() + scale_fill_Publication() +
-    theme(legend.title=element_blank()) + ggtitle("Original UMIs") +
+    theme(legend.title=element_blank()) + ggtitle("Original UMIs of fragments") +
     xlab("UMI position") + ylab("Percent")
   
   
@@ -240,7 +239,7 @@ plot.base.fraction <- function(res.table, umi.length) {
       rbindlist(list(base.inferred.matrix, 
                      data.table(t(data.frame(table(substr(unique(res.table[,inferred_umi]),
                                                           i, i)), row.names=1)))),
-                use.names=T, fill=F, idcol=F)
+                use.names=T, fill=T, idcol=F)
   }
   
   base.inferred.matrix.frac <- base.inferred.matrix / length(unique(res.table[,inferred_umi]))
@@ -249,10 +248,10 @@ plot.base.fraction <- function(res.table, umi.length) {
   
   base.inferred.matrix.frac.melt <- melt(base.inferred.matrix.frac, id.vars="ind")
   
-  g2 <- ggplot(base.inferred.matrix.frac.melt, aes(ind, value, fill=variable)) +
-    geom_bar(stat = "identity") + theme_Publication() + scale_fill_Publication() +
-    theme(legend.title=element_blank()) + ggtitle("Inferred UMIs") +
-    xlab("UMI position") + ylab("Percent")
+  g2 <- ggplot(base.inferred.matrix.frac.melt[value != "NA",],
+               aes(ind, value, fill=variable)) + geom_bar(stat = "identity") +
+    theme_Publication() + scale_fill_Publication() + theme(legend.title=element_blank()) +
+    ggtitle("Inferred UMIs of fragments") + xlab("UMI position") + ylab("Percent")
   return (list(g1,g2))
 }
 
@@ -321,7 +320,7 @@ QC.sam <- function(sam, umi.edit, umi.max.gap, pos.max.gap, output.dir) {
   samdt <- read.sam(sam)
   fname <- strsplit(last(strsplit(sam, split = "/")[[1]]), split = "\\.")[[1]][1]
   umi.length <- as.numeric(nchar(samdt[1,tstrsplit(qname, ":", fixed=TRUE,
-                                                   keep=length(tstrsplit(qname, ":", fixed=TRUE)))]))
+                                            keep=length(tstrsplit(qname, ":", fixed=TRUE)))]))
   # output file names
   umi.stats <- paste0(output.dir, fname, "_UMI_stats.tab")
   
@@ -406,10 +405,10 @@ QC.sam <- function(sam, umi.edit, umi.max.gap, pos.max.gap, output.dir) {
 
 
 # batch QC for one plate
-batch.QC.sam <- function(sam.dir, umi.edit = 1, umi.max.gap = 20,
-                         pos.max.gap = 3, output.dir = paste0(sam.dir,"SCRNAQC_res/")) {
+batch.QC.sam <- function(sam.dir, umi.edit = 1, umi.max.gap = 40,
+                         pos.max.gap = 5, output.dir = paste0(sam.dir,"SCRNAQC_res/")) {
   # Batch QC for one plate
-  files <- list.files(sam.dir, full.names = T)
+  files <- list.files(sam.dir, full.names = T, pattern = ".sam$")
   stats.sam <- vector(length(files), mode="list")
   plots.sam <- vector(length(files), mode="list")
   

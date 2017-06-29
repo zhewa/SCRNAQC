@@ -34,10 +34,10 @@ sam.dir <- "../data/sam/"
 umi.edit <- 1
 
 # minimal gap between fragments
-umi.max.gap <- 20
+umi.max.gap <- 40
 
 # maximal gap for alignment position correction
-pos.max.gap <- 3
+pos.max.gap <- 5
 
 # output directory
 output.dir <- "../res/"
