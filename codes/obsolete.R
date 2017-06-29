@@ -1,6 +1,6 @@
 # Obsolete stuff
 
-umi.mismatch.correction.2 <- function(samdt, current.ref, umi.window, umi.edit) {
+umi.mismatch.correction.obsolete <- function(samdt, current.ref, umi.window, umi.edit) {
   cat("Now processing", current.ref, "...\n")
   
   # Add UMI info to reference data table
@@ -66,4 +66,46 @@ na.to.0 = function(dt) {
   for (j in seq_len(ncol(dt)))
     set(dt, which(is.na(dt[[j]])), j, 0)
   return (dt)
+}
+
+
+# correct umi mismatch
+umi.mismatch.correction.ori <- function(samdt, current.ref, umi.max.gap, umi.edit) {
+  # Add inferred_umi info to reference data table
+  rdt <- samdt[rname == current.ref,]
+  rdt[, c("umi", "inferred_umi") := 
+        tstrsplit(qname, ":", fixed=TRUE, 
+                  keep=length(tstrsplit(qname, ":", fixed=TRUE)))]
+  
+  # Correct UMIs with sequencing errors by looking at UMIs in surrounding region
+  
+  # get all alignment positions
+  unique.pos <- sort(unique(rdt$position))
+  
+  unique.pos.list <- get.adj.pos.list(unique.pos, umi.max.gap)
+  
+  # for each IVT fragment
+  for (i in unique.pos.list) {
+    all.umi.count <- sort(table(c(rdt[position %in% i, umi])))
+    
+    if (length(all.umi.count) > 1) {
+      # temporary solution with only one iteration
+      # need a recursive solution for some special cases
+      sdm <- stringdistmatrix(names(all.umi.count), names(all.umi.count))
+      diag(sdm) <- 100
+      rownames(sdm) <- names(all.umi.count)
+      colnames(sdm) <- names(all.umi.count)
+      
+      for (j in colnames(sdm)) {
+        if (min(sdm[j,]) <= umi.edit) {
+          sdm.edit.ind <- max(which(sdm[j,] <= umi.edit))
+          # correct current umi j within position group i
+          if (which(rownames(sdm) == j) < sdm.edit.ind) {
+            rdt[umi == j & position %in% i, inferred_umi := colnames(sdm)[sdm.edit.ind]]
+          }
+        }
+      }
+    }
+  }
+  return (rdt)
 }
