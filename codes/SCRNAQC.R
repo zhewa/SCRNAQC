@@ -23,7 +23,7 @@ suppressPackageStartupMessages(library(ggthemes))
 suppressPackageStartupMessages(library(scales))
 suppressPackageStartupMessages(library(gridExtra))
 source("SCRNAQC_functions.R")
-
+#source("SCRNAQC_functions_test.R")
 
 ## global parameters
 

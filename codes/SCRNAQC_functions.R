@@ -86,7 +86,7 @@ umi.mismatch.correction <- function(samdt, current.ref, umi.max.gap, umi.edit) {
                   keep=length(tstrsplit(qname, ":", fixed=TRUE)))]
   
   # Correct UMIs with sequencing errors by looking at UMIs in surrounding region
-  # These reads are considered from the same fragment if distance <= umi.edit
+  
   # get all alignment positions
   unique.pos <- sort(unique(rdt$position))
   
@@ -94,36 +94,22 @@ umi.mismatch.correction <- function(samdt, current.ref, umi.max.gap, umi.edit) {
   
   # for each IVT fragment
   for (i in unique.pos.list) {
-    rdt <- recursive.umi.correction(i, rdt, umi.edit)
-  }
-  
-  return (rdt)
-}
-
-
-recursive.umi.correction <- function(i, rdt, umi.edit) {
-  all.umi.count <- sort(table(c(rdt[position %in% i, inferred_umi])))
-  
-  if (length(all.umi.count) > 1) {
-    sdm <- stringdistmatrix(names(all.umi.count), names(all.umi.count))
-    diag(sdm) <- 100
-    rownames(sdm) <- names(all.umi.count)
-    colnames(sdm) <- names(all.umi.count)
+    all.umi.count <- sort(table(c(rdt[position %in% i, umi])))
     
-    for (j in rownames(sdm)) {
-      if (min(sdm[j,]) <= umi.edit) {
-        sdm.edit.ind <- max(which(sdm[j,] <= umi.edit))
-        # correct current inferred_umi j within position group i
-        # if umi j has fewer reads
-        if (which(rownames(sdm) == j) < sdm.edit.ind) {
-          for (k in rdt[position %in% i & inferred_umi == j, umi]){
-            # if edit distance of original umi <= umi.edit
-            if (stringdist(k, last(names(which(sdm[j,] <= umi.edit)))) <= umi.edit) {
-              rdt[umi == k & inferred_umi == j & position %in% i,
-                  inferred_umi := colnames(sdm)[sdm.edit.ind]]
-              rdt <- recursive.umi.correction(i, rdt, umi.edit)
-              break
-            }
+    if (length(all.umi.count) > 1) {
+      # temporary solution with only one iteration
+      # need a recursive solution for some special cases
+      sdm <- stringdistmatrix(names(all.umi.count), names(all.umi.count))
+      diag(sdm) <- 100
+      rownames(sdm) <- names(all.umi.count)
+      colnames(sdm) <- names(all.umi.count)
+      
+      for (j in colnames(sdm)) {
+        if (min(sdm[j,]) <= umi.edit) {
+          sdm.edit.ind <- max(which(sdm[j,] <= umi.edit))
+          # correct current umi j within position group i
+          if (which(rownames(sdm) == j) < sdm.edit.ind) {
+            rdt[umi == j & position %in% i, inferred_umi := colnames(sdm)[sdm.edit.ind]]
           }
         }
       }
