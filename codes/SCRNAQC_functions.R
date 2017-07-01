@@ -86,7 +86,7 @@ umi.mismatch.correction <- function(samdt, current.ref, umi.max.gap, umi.edit) {
                   keep=length(tstrsplit(qname, ":", fixed=TRUE)))]
   
   # Correct UMIs with sequencing errors by looking at UMIs in surrounding region
-  
+  # These reads are considered from the same fragment if distance <= umi.edit
   # get all alignment positions
   unique.pos <- sort(unique(rdt$position))
   
@@ -431,5 +431,75 @@ batch.QC.sam <- function(sam.dir, umi.edit = 1, umi.max.gap = 40,
   }
   graphics.off()
   
-  cat("Done!\n")
+  cat("QC Done!\n")
 }
+
+
+visualize.QC.stats <- function(stats.file) {
+  dt <- fread(stats.file)
+  #colnames(dt)
+  g1 <- ggplot(dt, aes(1:nrow(dt), num.aligned.reads)) +
+    geom_point() + theme_Publication() + scale_y_continuous(labels = comma) +
+    ggtitle("Number of aligned reads") +
+    xlab("Cell index") + ylab("Number of aligned reads")
+  
+  g2 <- ggplot(dt, aes(1:nrow(dt), percent.unique.fragments)) +
+    geom_point() + geom_abline(slope=0, intercept=median(dt$percent.unique.fragments),
+                               color='#E41A1C') +
+    theme_Publication() + scale_y_continuous(labels = comma) +
+    ggtitle("Fraction of unique fragments") +
+    xlab("Cell index") + ylab("Fraction of unique fragments")
+  
+  g3 <- ggplot(dt, aes(1:nrow(dt), num.unique.UMI)) +
+    geom_point() + geom_abline(slope=0, intercept=median(dt$num.unique.UMI),
+                               color='#E41A1C') +
+    theme_Publication() + scale_y_continuous(labels = comma) +
+    ggtitle("Number of unique UMIs") +
+    xlab("Cell index") + ylab("Number of unique UMIs")
+  
+  g4 <- ggplot(dt, aes(1:nrow(dt), num.unique.UMI.corrected)) +
+    geom_point() + geom_abline(slope=0, intercept=median(dt$num.unique.UMI.corrected),
+                               color='#E41A1C') +
+    theme_Publication() + scale_y_continuous(labels = comma) +
+    ggtitle("Number of unique UMIs after correction") +
+    xlab("Cell index") + ylab("Number of unique UMIs")
+  
+  g5 <- ggplot(dt, aes(1:nrow(dt), percent.reads.UMI.mismatch)) +
+    geom_point() + geom_abline(slope=0, intercept=median(dt$percent.reads.UMI.mismatch),
+                               color='#E41A1C') +
+    theme_Publication() + scale_y_continuous(labels = comma) +
+    ggtitle("Fraction of reads with mismatch in UMI") +
+    xlab("Cell index") + ylab("Fraction")
+  
+  g6 <- ggplot(dt, aes(1:nrow(dt), percent.reads.pos.shift)) +
+    geom_point() + geom_abline(slope=0, intercept=median(dt$percent.reads.pos.shift),
+                               color='#E41A1C') +
+    theme_Publication() + scale_y_continuous(labels = comma) +
+    ggtitle("Fraction of reads with shift in alignment position") +
+    xlab("Cell index") + ylab("Fraction")
+  
+  g7 <- ggplot(dt, aes(1:nrow(dt), avg.products.per.fragment)) +
+    geom_point() + geom_abline(slope=0, intercept=median(dt$avg.products.per.fragment),
+                               color='#E41A1C') +
+    theme_Publication() + scale_y_continuous(labels = comma) +
+    ggtitle("Average number of PCR products per IVT fragment") +
+    xlab("Cell index") + ylab("Average")
+  
+  g8 <- ggplot(dt, aes(1:nrow(dt), median.products.per.fragment)) +
+    geom_point() + theme_Publication() + scale_y_continuous(labels = comma) +
+    ggtitle("Median number of PCR products per IVT fragment") +
+    xlab("Cell index") + ylab("Median")
+  
+  g9 <- ggplot(dt, aes(1:nrow(dt), percent.amplified.fragments)) +
+    geom_point() + geom_abline(slope=0, intercept=median(dt$percent.amplified.fragments),
+                              color='#E41A1C') +
+    theme_Publication() + scale_y_continuous(labels = comma) +
+    ggtitle("Fraction of PCR amplified fragments") +
+    xlab("Cell index") + ylab("Fraction")
+  
+  return (gridExtra::marrangeGrob(grobs = list(g1,g2,g3,g4,g5,g6,g7,g8,g9), 
+                                  ncol = 1, nrow = 2, 
+                                 top = grid::textGrob("Plate_CS_1017")))
+  
+}
+
