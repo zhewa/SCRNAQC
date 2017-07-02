@@ -22,6 +22,7 @@ suppressPackageStartupMessages(library(ggplot2))
 suppressPackageStartupMessages(library(ggthemes))
 suppressPackageStartupMessages(library(scales))
 suppressPackageStartupMessages(library(gridExtra))
+suppressPackageStartupMessages(library(MASS))
 source("SCRNAQC_functions.R")
 #source("SCRNAQC_functions_test.R")
 
