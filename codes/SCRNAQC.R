@@ -43,7 +43,7 @@ pos.max.gap <- 5
 # output directory
 output.dir <- "../res/"
 
-stats.file <- "../res/Alignments_RPI1_UMI_stats.tab"
+#stats.file <- "../res/Alignments_RPI1_UMI_stats.tab"
 
 # palette for ggplot
 cpalette <- c("#386cb0","#fdb462","#7fc97f","#ef3b2c","#662506","#0A3708",
@@ -54,9 +54,9 @@ cpalette <- c("#386cb0","#fdb462","#7fc97f","#ef3b2c","#662506","#0A3708",
 # run batch QC for one plate
 batch.QC.sam(sam.dir, umi.edit, umi.max.gap, pos.max.gap, output.dir)
 
-pdf(paste0(output.dir, "QC_stats_visualization.pdf"))
-visualize.QC.stats(stats.file)
-graphics.off()
+#pdf(paste0(output.dir, "QC_stats_visualization.pdf"))
+#visualize.QC.stats(stats.file)
+#graphics.off()
 
 
 

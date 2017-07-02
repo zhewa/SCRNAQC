@@ -190,6 +190,23 @@ get.pcr.duplicates <- function(rdt) {
 }
 
 
+num.frag.per.transcript <- function(rdt, umi.max.gap) {
+  reads.dt <- rdt[,.(rname, inferred_pos, inferred_umi)]
+  chr <- rdt$rname[1]
+  
+  unique.pos <- sort(unique(reads.dt$inferred_pos))
+  unique.pos.list <- get.adj.pos.list(unique.pos, umi.max.gap)
+  
+  res.dt <- data.table(rname = chr, transcript = paste0(chr,"_",1:length(unique.pos.list)))
+  
+  for (i in 1:length(unique.pos.list)) {
+    res.dt[i, num := length(unique(rdt[inferred_pos %in% unique.pos.list[[i]],
+                                        inferred_umi]))]
+  }
+  return (res.dt)
+}
+
+
 num.amplified.frag <- function(num.pcr.products.table) {
   return (sum(num.pcr.products.table$num >= 2))
 }
@@ -221,7 +238,7 @@ plot.num.frag.per.umi <- function(umi.table, title) {
 
 
 fit.neg.binomial <- function(umi.table) {
-  ## Try to figure out what the mean (mu) and size (theta)
+  ## Try to figure out what the size (theta) and mean (mu)
   fit = fitdistr(as.numeric(umi.table), "negative binomial")
   return (list(fit$estimate[1], fit$estimate[2]))
 }
@@ -275,25 +292,27 @@ plot.num.products.per.fragment <- function(pcr.products.dt) {
   # histogram of # products per fragment
   
   #Fit negative binomial
-  #si <- fit.neg.binomial(pcr.products.dt$num)[[1]]
-  #m <- fit.neg.binomial(pcr.products.dt$num)[[2]]
+  si <- fit.neg.binomial(pcr.products.dt$num)[[1]]
+  m <- fit.neg.binomial(pcr.products.dt$num)[[2]]
   
-  #pcr.products.dt[,nbinom := dnbinom(num, size = si, mu = m)]
+  pcr.products.dt[,nbinom := dnbinom(num, size = si, mu = m)]
   
-  pcr.products.dt[,num := log2(num)]
+  pcr.products.dt[,log2.num := log2(num)]
   
-  breaks <- pretty(range(pcr.products.dt$num),
-                   n = nclass.scott(pcr.products.dt$num), min.n = 1)
+  breaks <- pretty(range(pcr.products.dt$log2.num),
+                   n = nclass.scott(pcr.products.dt$log2.num), min.n = 1)
   bwidth <- diff(breaks)[1]
   
-  g <- ggplot(pcr.products.dt, aes(num)) +
+  g <- ggplot(pcr.products.dt, aes(log2.num)) +
+  #g <- ggplot(pcr.products.dt, aes(num)) +
     geom_histogram(aes(y=..count../sum(..count..)),
     #geom_histogram(aes(y=..density..),
                    binwidth=bwidth, closed="left", boundary=0, position="identity",
                    fill="white", col="black") +
-    #geom_line(aes(y=nbinom), col="red") +
-    ggtitle("Number of PCR products per IVT fragment") + 
-    #scale_x_continuous(trans="log10", name="density") +
+    geom_line(aes(y=nbinom), col="red") +
+    #geom_line(aes(x=log2.num, y=dnbinom(log2.num, size = si, mu = m)), col="red") +
+    ggtitle("# PCR products per fragment") + 
+    #scale_x_log10() +
     xlab(expression(bold(Log[2](Number~of~PCR~products)))) +
     ylab("Probability") + theme_Publication()
   
@@ -301,7 +320,40 @@ plot.num.products.per.fragment <- function(pcr.products.dt) {
 }
 
 
-plot.stats.sam <- function(res.table, num.pcr.products.table, umi.length, fname) {
+plot.num.fragments.per.transcript <- function(num.frag.table) {
+  # histogram of # fragments per transcript
+  
+  #Fit negative binomial
+  si <- fit.neg.binomial(num.frag.table$num)[[1]]
+  m <- fit.neg.binomial(num.frag.table$num)[[2]]
+  
+  num.frag.table[,nbinom := dnbinom(num, size = si, mu = m)]
+  
+  num.frag.table[,log2.num := log2(num)]
+  
+  breaks <- pretty(range(num.frag.table$log2.num),
+                   n = nclass.scott(num.frag.table$log2.num), min.n = 1)
+  bwidth <- diff(breaks)[1]
+  
+  g <- ggplot(num.frag.table, aes(log2.num)) +
+    #g <- ggplot(pcr.products.dt, aes(num)) +
+    geom_histogram(aes(y=..count../sum(..count..)),
+                   #geom_histogram(aes(y=..density..),
+                   binwidth=bwidth, closed="left", boundary=0, position="identity",
+                   fill="white", col="black") +
+    geom_line(aes(y=nbinom), col="red") +
+    #geom_line(aes(x=log2.num, y=dnbinom(log2.num, size = si, mu = m)), col="red") +
+    ggtitle("# IVT fragments per transcript") + 
+    #scale_x_log10() +
+    xlab(expression(bold(Log[2](Number~of~IVT~transcripts)))) +
+    ylab("Probability") + theme_Publication()
+  
+  return (g)
+}
+
+
+plot.stats.sam <- function(res.table, num.pcr.products.table, num.frag.table,
+                           umi.length, fname) {
   # calculate fragment number
   ori.fragments <- unique(res.table[,.(umi, position)])
   inf.fragments <- unique(res.table[,.(inferred_umi, inferred_pos)])
@@ -320,8 +372,22 @@ plot.stats.sam <- function(res.table, num.pcr.products.table, umi.length, fname)
   
   g5 <- plot.num.products.per.fragment(num.pcr.products.table)
   
-  return (gridExtra::arrangeGrob(grobs = list(g1,g2,g3.g4[[1]], g3.g4[[2]], g5), ncol = nc, 
-                                 top = grid::textGrob(paste0(fname,".sam"))))
+  g6 <- plot.num.fragments.per.transcript(num.frag.table)
+  
+  return (gridExtra::arrangeGrob(grobs = list(g1,g2,g3.g4[[1]], g3.g4[[2]], g5, g6),
+                                 ncol = nc, top = grid::textGrob(paste0(fname,".sam"))))
+}
+
+
+get.umi.abun <- function(res.table) {
+  # calculate fragment number
+  ori.fragments <- unique(res.table[,.(umi, position)])
+  inf.fragments <- unique(res.table[,.(inferred_umi, inferred_pos)])
+  
+  # Calculate relative abundance of UMIs
+  umi.table <- table(ori.fragments$umi)
+  umi.inferred.table <- table(inf.fragments$inferred_umi)
+  return (list(umi.table, umi.inferred.table))
 }
 
 
@@ -341,6 +407,7 @@ QC.sam <- function(sam, umi.edit, umi.max.gap, pos.max.gap, output.dir) {
   chr <- mixedsort(setdiff(unique(samdt[,rname]), "*"))
   res.table <- list()
   num.pcr.products.table <- list()
+  num.frag.table <- list()
   
   
   # for each reference sequence name (chr)
@@ -360,7 +427,12 @@ QC.sam <- function(sam, umi.edit, umi.max.gap, pos.max.gap, output.dir) {
     num.pcr.products.table <- rbindlist(list(num.pcr.products.table, get.pcr.duplicates(rdt)),
                                         use.names=F, fill=F, idcol=F)
     
-    # Distribution of average UMI edit distance of all reads
+    # Number of IVT fragments per transcript
+    num.frag.table <- rbindlist(list(num.frag.table, 
+                                     num.frag.per.transcript(rdt, umi.max.gap)),
+                                use.names=F, fill=F, idcol=F)
+    
+    # Distribution of average UMI edit distance of all reads?
     
     
     res.table <- rbindlist(list(res.table, 
@@ -375,6 +447,12 @@ QC.sam <- function(sam, umi.edit, umi.max.gap, pos.max.gap, output.dir) {
   # Number of reads with shifts in alignment position
   num.pos.shift <- nrow(res.table[position != inferred_pos,])
   
+  negbinom.fit <- fit.neg.binomial(get.umi.abun(res.table)[[1]])
+  negbinom.fit.inferred <- fit.neg.binomial(get.umi.abun(res.table)[[2]])
+  
+  prod.per.frag.fit <- fit.neg.binomial(num.pcr.products.table$num)
+  
+  frag.per.trans.fit <- fit.neg.binomial(num.frag.table$num)
   
   stats.label <- c("filename",
                    "num.aligned.reads",
@@ -382,34 +460,56 @@ QC.sam <- function(sam, umi.edit, umi.max.gap, pos.max.gap, output.dir) {
                    "percent.unique.fragments",
                    "num.unique.UMI",
                    "num.unique.UMI.corrected",
+                   "size.negbinom.fit.frag.per.UMI",
+                   "mu.negbinom.fit.frag.per.UMI",
+                   "size.negbinom.fit.frag.per.UMI.inferred",
+                   "mu.negbinom.fit.frag.per.UMI.inferred",
                    "num.reads.UMI.mismatch",
                    "percent.reads.UMI.mismatch",
                    "num.reads.pos.shift",
                    "percent.reads.pos.shift",
                    "avg.products.per.fragment",
                    "median.products.per.fragment",
+                   "size.negbinom.fit.prod.per.frag.corrected",
+                   "mu.negbinom.fit.prod.per.frag.corrected",
                    "num.amplified.fragments",
-                   "percent.amplified.fragments")
+                   "percent.amplified.fragments",
+                   "num.transcripts",
+                   "avg.fragments.per.transcript",
+                   "median.fragments.per.transcript",
+                   "size.negbinom.fit.frag.per.trans.corrected",
+                   "mu.negbinom.fit.frag.per.trans.corrected")
   
   stats <- c(fname,
-             nrow(res.table), 
+             nrow(res.table),
              nrow(num.pcr.products.table),
              nrow(num.pcr.products.table)/nrow(res.table),
              length(unique(res.table$umi)), 
              length(unique(res.table$inferred_umi)),
+             negbinom.fit[[1]],
+             negbinom.fit[[2]],
+             negbinom.fit.inferred[[1]],
+             negbinom.fit.inferred[[2]],
              num.umi.mismatch,
              num.umi.mismatch/nrow(res.table),
              num.pos.shift,
              num.pos.shift/nrow(res.table),
              mean(num.pcr.products.table$num),
              median(num.pcr.products.table$num),
+             prod.per.frag.fit[[1]],
+             prod.per.frag.fit[[2]],
              num.amplified.frag(num.pcr.products.table),
-             num.amplified.frag(num.pcr.products.table)/nrow(num.pcr.products.table))
+             num.amplified.frag(num.pcr.products.table)/nrow(num.pcr.products.table),
+             nrow(num.frag.table),
+             mean(num.frag.table$num),
+             median(num.frag.table$num),
+             frag.per.trans.fit[[1]],
+             frag.per.trans.fit[[2]])
   
   dt.stats <- data.table(matrix(stats, ncol=length(stats.label), nrow=1))
   colnames(dt.stats) <- stats.label
   
-  grob <- plot.stats.sam(res.table, num.pcr.products.table, umi.length, fname)
+  grob <- plot.stats.sam(res.table, num.pcr.products.table, num.frag.table, umi.length, fname)
   return (list(dt.stats, grob))
 }
 
