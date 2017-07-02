@@ -207,6 +207,7 @@ plot.num.frag.per.umi <- function(umi.table, title) {
   dt[,nbinom := dnbinom(N, size = si, mu = m)]
   
   g <- ggplot(dt, aes(N)) + 
+    #geom_histogram(aes(y=..count../sum(..count..)),
     geom_histogram(aes(y=..density..),
                    binwidth=bwidth, position = "identity",
                    closed="left", boundary=0, fill="white", col="black") +
@@ -214,7 +215,7 @@ plot.num.frag.per.umi <- function(umi.table, title) {
     #scale_x_continuous(trans="log2", name="density") +
     theme_Publication() +
     ggtitle(title) +
-    xlab("Number of fragments per UMI") + ylab("UMI fraction")
+    xlab("Number of fragments per UMI") + ylab("Density")
   return (g)
 }
 
@@ -273,13 +274,13 @@ plot.base.fraction <- function(res.table, umi.length) {
 plot.num.products.per.fragment <- function(pcr.products.dt) {
   # histogram of # products per fragment
   
-  si <- fit.neg.binomial(pcr.products.dt$num)[[1]]
-  m <- fit.neg.binomial(pcr.products.dt$num)[[2]]
+  #Fit negative binomial
+  #si <- fit.neg.binomial(pcr.products.dt$num)[[1]]
+  #m <- fit.neg.binomial(pcr.products.dt$num)[[2]]
   
-  pcr.products.dt[,nbinom := dnbinom(num, size = si, mu = m)]
+  #pcr.products.dt[,nbinom := dnbinom(num, size = si, mu = m)]
   
   pcr.products.dt[,num := log2(num)]
-  pcr.products.dt[,nbinom := log2(nbinom)]
   
   breaks <- pretty(range(pcr.products.dt$num),
                    n = nclass.scott(pcr.products.dt$num), min.n = 1)
@@ -290,11 +291,11 @@ plot.num.products.per.fragment <- function(pcr.products.dt) {
     #geom_histogram(aes(y=..density..),
                    binwidth=bwidth, closed="left", boundary=0, position="identity",
                    fill="white", col="black") +
-    geom_line(aes(y=nbinom), col="red") +
+    #geom_line(aes(y=nbinom), col="red") +
     ggtitle("Number of PCR products per IVT fragment") + 
     #scale_x_continuous(trans="log10", name="density") +
     xlab(expression(bold(Log[2](Number~of~PCR~products)))) +
-    ylab("Fraction") + theme_Publication()
+    ylab("Probability") + theme_Publication()
   
   return (g)
 }
