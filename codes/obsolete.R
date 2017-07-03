@@ -167,3 +167,21 @@ umi.mismatch.correction.ori <- function(samdt, current.ref, umi.max.gap, umi.edi
   }
   return (rdt)
 }
+
+
+# INCORRECT number of fragments per transcript function
+num.frag.per.transcript <- function(rdt, umi.max.gap) {
+  reads.dt <- rdt[,.(rname, inferred_pos, inferred_umi)]
+  chr <- rdt$rname[1]
+  
+  unique.pos <- sort(unique(reads.dt$inferred_pos))
+  unique.pos.list <- get.adj.pos.list(unique.pos, umi.max.gap)
+  
+  res.dt <- data.table(rname = chr, transcript = paste0(chr,"_",1:length(unique.pos.list)))
+  
+  for (i in 1:length(unique.pos.list)) {
+    res.dt[i, num := length(unique(rdt[inferred_pos %in% unique.pos.list[[i]],
+                                       inferred_umi]))]
+  }
+  return (res.dt)
+}
