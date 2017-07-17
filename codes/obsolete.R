@@ -185,3 +185,47 @@ num.frag.per.transcript <- function(rdt, umi.max.gap) {
   }
   return (res.dt)
 }
+
+
+plot.base.fraction <- function(res.table, umi.length) {
+  # Base percentage of UMIs
+  base.matrix <- c()
+  for(i in 1:umi.length) {
+    # consider all fragments
+    base.matrix <- rbindlist(list(base.matrix,
+                                  data.table(t(data.frame(table(substr(unique(res.table[,umi]),
+                                                                       i, i)), row.names=1)))),
+                             use.names=T, fill=T, idcol=F)
+  }
+  
+  base.matrix.frac <- base.matrix / length(unique(res.table[,umi]))
+  base.matrix.frac$ind <- 1:nrow(base.matrix.frac)
+  base.matrix.frac.melt <- melt(base.matrix.frac, id.vars="ind")
+  
+  g1 <- ggplot(base.matrix.frac.melt[value != "NA",], aes(ind, value, fill=variable)) +
+    geom_bar(stat = "identity") + theme_Publication() + scale_fill_Publication() +
+    theme(legend.title=element_blank()) + ggtitle("Original UMIs of fragments") +
+    xlab("UMI position") + ylab("Percent")
+  
+  
+  base.inferred.matrix <- c()
+  for(i in 1:umi.length) {
+    base.inferred.matrix <- 
+      rbindlist(list(base.inferred.matrix, 
+                     data.table(t(data.frame(table(substr(unique(res.table[,inferred_umi]),
+                                                          i, i)), row.names=1)))),
+                use.names=T, fill=T, idcol=F)
+  }
+  
+  base.inferred.matrix.frac <- base.inferred.matrix / length(unique(res.table[,inferred_umi]))
+  
+  base.inferred.matrix.frac$ind <- 1:nrow(base.inferred.matrix.frac)
+  
+  base.inferred.matrix.frac.melt <- melt(base.inferred.matrix.frac, id.vars="ind")
+  
+  g2 <- ggplot(base.inferred.matrix.frac.melt[value != "NA",],
+               aes(ind, value, fill=variable)) + geom_bar(stat = "identity") +
+    theme_Publication() + scale_fill_Publication() + theme(legend.title=element_blank()) +
+    ggtitle("Inferred UMIs of fragments") + xlab("UMI position") + ylab("Percent")
+  return (list(g1,g2))
+}

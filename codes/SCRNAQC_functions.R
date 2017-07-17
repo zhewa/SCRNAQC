@@ -155,7 +155,7 @@ get.position.with.most.reads <- function(rdt.sub) {
   return (sort(as.numeric(names(res[which(res == res[1])])))[1])
 }
 
-
+# correct alignment position error
 alignment.position.correction <- function(rdt, pos.max.gap) {
   rdt[,inferred_pos := position]
   unique.pos <- sort(unique(rdt$position))
@@ -255,46 +255,12 @@ fit.neg.binomial <- function(umi.table) {
 }
 
 
-plot.base.fraction <- function(res.table, umi.length) {
-  # Base percentage of UMIs
-  base.matrix <- c()
-  for(i in 1:umi.length) {
-    # consider all fragments
-    base.matrix <- rbindlist(list(base.matrix,
-                                  data.table(t(data.frame(table(substr(unique(res.table[,umi]),
-                                                                       i, i)), row.names=1)))),
-                             use.names=T, fill=T, idcol=F)
-  }
-  
-  base.matrix.frac <- base.matrix / length(unique(res.table[,umi]))
-  base.matrix.frac$ind <- 1:nrow(base.matrix.frac)
-  base.matrix.frac.melt <- melt(base.matrix.frac, id.vars="ind")
-  
-  g1 <- ggplot(base.matrix.frac.melt[value != "NA",], aes(ind, value, fill=variable)) +
-    geom_bar(stat = "identity") + theme_Publication() + scale_fill_Publication() +
-    theme(legend.title=element_blank()) + ggtitle("Original UMIs of fragments") +
-    xlab("UMI position") + ylab("Percent")
-  
-  
-  base.inferred.matrix <- c()
-  for(i in 1:umi.length) {
-    base.inferred.matrix <- 
-      rbindlist(list(base.inferred.matrix, 
-                     data.table(t(data.frame(table(substr(unique(res.table[,inferred_umi]),
-                                                          i, i)), row.names=1)))),
-                use.names=T, fill=T, idcol=F)
-  }
-  
-  base.inferred.matrix.frac <- base.inferred.matrix / length(unique(res.table[,inferred_umi]))
-  
-  base.inferred.matrix.frac$ind <- 1:nrow(base.inferred.matrix.frac)
-  
-  base.inferred.matrix.frac.melt <- melt(base.inferred.matrix.frac, id.vars="ind")
-  
-  g2 <- ggplot(base.inferred.matrix.frac.melt[value != "NA",],
-               aes(ind, value, fill=variable)) + geom_bar(stat = "identity") +
-    theme_Publication() + scale_fill_Publication() + theme(legend.title=element_blank()) +
-    ggtitle("Inferred UMIs of fragments") + xlab("UMI position") + ylab("Percent")
+plot.base.fraction <- function(res.table) {
+
+  g1 <- ggseqlogo(res.table[,umi]) + theme_Publication() + ggtitle("Original UMIs of fragments") +
+    xlab("UMI position")
+  g2 <- ggseqlogo(res.table[,inferred_umi]) + theme_Publication() +
+    ggtitle("Inferred UMIs of fragments") + xlab("UMI position")
   return (list(g1,g2))
 }
 
@@ -368,8 +334,7 @@ plot.num.fragments.per.transcript <- function(num.frag.table) {
 }
 
 
-plot.stats.sam <- function(res.table, num.pcr.products.table, num.frag.table,
-                           umi.length, fname) {
+plot.stats.sam <- function(res.table, num.pcr.products.table, num.frag.table, fname) {
   # calculate fragment number
   ori.fragments <- unique(res.table[,.(umi, position)])
   inf.fragments <- unique(res.table[,.(inferred_umi, inferred_pos)])
@@ -384,7 +349,7 @@ plot.stats.sam <- function(res.table, num.pcr.products.table, num.frag.table,
   
   g2 <- plot.num.frag.per.umi(umi.inferred.table, "Inferred UMIs")
   
-  g3.g4 <- plot.base.fraction(res.table, umi.length)
+  g3.g4 <- plot.base.fraction(res.table)
   
   g5 <- plot.num.products.per.fragment(num.pcr.products.table)
   
@@ -411,8 +376,8 @@ QC.sam <- function(sam, umi.edit, umi.max.gap, pos.max.gap, output.dir) {
   # read in SAM file
   samdt <- read.sam(sam)
   fname <- strsplit(last(strsplit(sam, split = "/")[[1]]), split = "\\.")[[1]][1]
-  umi.length <- as.numeric(nchar(samdt[1,tstrsplit(qname, ":", fixed=TRUE,
-                                            keep=length(tstrsplit(qname, ":", fixed=TRUE)))]))
+  #umi.length <- as.numeric(nchar(samdt[1,tstrsplit(qname, ":", fixed=TRUE,
+  #                                          keep=length(tstrsplit(qname, ":", fixed=TRUE)))]))
   # output file names
   umi.stats <- paste0(output.dir, fname, "_UMI_stats.tab")
   
@@ -528,7 +493,7 @@ QC.sam <- function(sam, umi.edit, umi.max.gap, pos.max.gap, output.dir) {
   dt.stats <- data.table(matrix(stats, ncol=length(stats.label), nrow=1))
   colnames(dt.stats) <- stats.label
   
-  grob <- plot.stats.sam(res.table, num.pcr.products.table, num.frag.table, umi.length, fname)
+  grob <- plot.stats.sam(res.table, num.pcr.products.table, num.frag.table, fname)
   return (list(dt.stats, grob))
 }
 
@@ -558,13 +523,13 @@ batch.QC.sam <- function(sam.dir, umi.edit = 1, umi.max.gap = 40,
   for (i in 1:length(files)) {
     grid.arrange(plots.sam[[i]])
   }
-  graphics.off()
+  dev.off()
   
   cat("QC Done!\n")
 }
 
 
-visualize.QC.stats <- function(stats.file) {
+visualize.QC.stats <- function(stats.file, platename) {
   dt <- fread(stats.file)
   #colnames(dt)
   
@@ -599,8 +564,7 @@ visualize.QC.stats <- function(stats.file) {
                                intercept=median(dt$size.negbinom.fit.frag.per.UMI.inferred),
                                color='#E41A1C') +
     theme_Publication() + scale_y_continuous(labels = comma) +
-    ggtitle(expression(bold(paste0(theta,
-                                   " of negative binomial fit to # fragments per UMI")))) +
+    ggtitle(expression(bold(theta~of~negative~binomial~fit~to~number~of~fragments~per~UMI))) +
     xlab("Cell index") + ylab(expression(bold(theta)))
   
   g6 <- ggplot(dt, aes(1:nrow(dt), mu.negbinom.fit.frag.per.UMI.inferred)) +
@@ -608,8 +572,7 @@ visualize.QC.stats <- function(stats.file) {
                                intercept=median(dt$mu.negbinom.fit.frag.per.UMI.inferred),
                                color='#E41A1C') +
     theme_Publication() + scale_y_continuous(labels = comma) +
-    ggtitle(expression(bold(paste0(mu,
-                                   " of negative binomial fit to # fragments per UMI")))) +
+    ggtitle(expression(bold(mu~of~negative~binomial~fit~to~number~of~fragments~per~UMI))) +
     #ggtitle("Mu of negative binomial fit to # fragments per UMI") +
     xlab("Cell index") + ylab(expression(bold(mu)))
   
@@ -659,14 +622,10 @@ visualize.QC.stats <- function(stats.file) {
     theme_Publication() + scale_y_continuous(labels = comma) +
     ggtitle("Average number of fragments per transcript") +
     xlab("Cell index") + ylab("Average")
-  
-  
-  
-  
-  
+
   return (gridExtra::marrangeGrob(grobs = list(g1,g2,g3,g4,g5,g6,g7,g8,g9,g10,g11,g12,g13), 
                                   ncol = 1, nrow = 2, 
-                                 top = grid::textGrob("Plate_CS_1017")))
+                                 top = grid::textGrob(platename)))
 }
 
 
