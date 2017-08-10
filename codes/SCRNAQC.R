@@ -23,6 +23,7 @@ suppressPackageStartupMessages(library(ggthemes))
 suppressPackageStartupMessages(library(scales))
 suppressPackageStartupMessages(library(gridExtra))
 suppressPackageStartupMessages(library(MASS))
+suppressPackageStartupMessages(library(ggseqlogo))
 source("SCRNAQC_functions.R")
 #source("SCRNAQC_functions_test.R")
 

@@ -1,8 +1,6 @@
 #!/usr/bin/env Rscript
 
 # SCRNAQC functions
-# Zhe Wang
-# 20170628
 
 
 
