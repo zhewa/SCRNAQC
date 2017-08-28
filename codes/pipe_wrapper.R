@@ -8,6 +8,18 @@ main <- function() {
   source("align.R")
   source("count_umi.R")
   
+  # required packages
+  suppressPackageStartupMessages(library(parallel))
+  suppressPackageStartupMessages(library(data.table))
+  suppressPackageStartupMessages(library(ShortRead))
+  suppressPackageStartupMessages(library(gtools))
+  suppressPackageStartupMessages(library(Rsubread))
+  suppressPackageStartupMessages(library(data.table))
+  suppressPackageStartupMessages(library(GenomicAlignments))
+  suppressPackageStartupMessages(library(GenomicFeatures))
+  suppressPackageStartupMessages(library(Rsamtools))
+  
+  
   # demultiplex
   bc.index.file <- "barcodes.txt"
   cut.length <- 50
@@ -21,15 +33,19 @@ main <- function() {
   stats.out <- "demultiplex_stats"
   out.format <- "BAM"
   align.dir <- "../Alignment"
+  count.out <- "../Count"
   # alignment
   GRCh38.index <- "/restricted/projectnb/cbmhive/references/Homo_Sapiens/GRCh38/Rsubread_index/GRCh38"
-  gtf.file <- "../data/gtf/Homo_sapiens.GRCh38.89.chr_ercc.gtf"
+  gtf.file <- "/restricted/projectnb/cbmhive/references/Homo_Sapiens/GRCh38/gtf/Homo_sapiens.GRCh38.89.chr_ercc.gtf"
+  nthreads <- 16
+  mc.cores <- 16
+  
   # run pipeline
   demultiplex.wrapper(bc.index.file, input.dir, stats.out, output.dir, out.folder, min.bc.quality,
-                      umi.length, bc.length, cut.length, fname.delimiter)
+                      umi.length, bc.length, cut.length, fname.delimiter, mc.cores)
   fastq.dir <- file.path(output.dir, out.folder)
-  align.wrapper(fastq.dir, GRCh38.index, out.format, align.dir)
-  count.wrapper(alignment.dir = align.dir, gtf.file, if.bam = T, output.dir = "../Count")
+  align.wrapper(fastq.dir, GRCh38.index, out.format, align.dir, nthreads, mc.cores)
+  count.wrapper(alignment.dir = align.dir, gtf.file, if.bam = T, count.out, mc.cores)
 }
 
 
