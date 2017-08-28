@@ -48,6 +48,6 @@ main <- function() {
   count.wrapper(alignment.dir = align.dir, gtf.file, if.bam = T, count.out, mc.cores)
 }
 
-
-
+# run pipeline
+main()
 
