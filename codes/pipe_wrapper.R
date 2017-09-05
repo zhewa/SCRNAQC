@@ -19,12 +19,12 @@ main <- function() {
   suppressPackageStartupMessages(library(GenomicFeatures))
   suppressPackageStartupMessages(library(Rsamtools))
   
-  
-  # demultiplex
+  # required fields
   bc.index.file <- "barcodes.txt"
+  input.dir <- "/restricted/projectnb/pulmseq/fastq/170802_NB500996_0083_AH5FC2BGX3"
+  
   cut.length <- 50
   min.bc.quality <- 10
-  input.dir <- "/restricted/projectnb/pulmseq/fastq/170802_NB500996_0083_AH5FC2BGX3"
   output.dir <- ".."
   umi.length <- 5
   bc.length <- 6
@@ -34,10 +34,13 @@ main <- function() {
   out.format <- "BAM"
   align.dir <- "../Alignment"
   count.out <- "../Count"
+  
   # alignment
   GRCh38.index <- "/restricted/projectnb/cbmhive/references/Homo_Sapiens/GRCh38/Rsubread_index/GRCh38"
   gtf.file <- "/restricted/projectnb/cbmhive/references/Homo_Sapiens/GRCh38/gtf/Homo_sapiens.GRCh38.89.chr_ercc.gtf"
   nthreads <- 16
+  
+  # cores
   mc.cores <- 16
   
   # run pipeline

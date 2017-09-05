@@ -113,20 +113,24 @@ demultiplex.sample <- function(i, meta.dt, barcode.dt,  umi.length, bc.length, c
       for (k in barcode.dt[,cell_num]) {
         bar <- barcode.dt[cell_num == k, barcode]
         sfq.dt <- fqy.dt[barcode == bar,]
-        fq.out <- ShortReadQ(sread=DNAStringSet(sfq.dt[,read2]),
-                             quality=BStringSet(sfq.dt[,qtring2]),
-                             id=BStringSet(sfq.dt[,paste0(rname2, ":UMI:", umi, ":")]))
-        # project_id_"sample"_cellnum.fastq.gz
-        out.fname <- paste0(sample.meta.dt[, paste(unique(project), i, sep=fname.delimiter)],
-                            "_sample_", sprintf("%04d", k), ".fastq.gz")
-        dir.create(file.path(output.dir, out.folder, i),
-                   recursive = T, showWarnings = F)
-        out.full <- file.path(output.dir, out.folder, i, out.fname)
-        if (file.exists(out.full)) {
-          writeFastq(fq.out, out.full, mode = "a")
-        }
-        else {
-          writeFastq(fq.out, out.full, mode = "w")
+        
+        # if barcode exists in fastq
+        if (nrow(sfq.dt) != 0) {
+          fq.out <- ShortReadQ(sread=DNAStringSet(sfq.dt[,read2]),
+                               quality=BStringSet(sfq.dt[,qtring2]),
+                               id=BStringSet(sfq.dt[,paste0(rname2, ":UMI:", umi, ":")]))
+          # project_id_"sample"_cellnum.fastq.gz
+          out.fname <- paste0(sample.meta.dt[, paste(unique(project), i, sep=fname.delimiter)],
+                              "_sample_", sprintf("%04d", k), ".fastq.gz")
+          dir.create(file.path(output.dir, out.folder, i),
+                     recursive = T, showWarnings = F)
+          out.full <- file.path(output.dir, out.folder, i, out.fname)
+          if (file.exists(out.full)) {
+            writeFastq(fq.out, out.full, mode = "a")
+          }
+          else {
+            writeFastq(fq.out, out.full, mode = "w")
+          }
         }
         stats.dt[barcode == bar, reads := reads + nrow(sfq.dt)]
       }
